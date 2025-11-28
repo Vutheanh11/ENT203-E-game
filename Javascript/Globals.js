@@ -8,4 +8,9 @@ const scoreEl = document.getElementById('exp-score');
 const levelEl = document.getElementById('level-display');
 const expBarEl = document.getElementById('exp-bar');
 
-export { canvas, ctx, scoreEl, levelEl, expBarEl };
+const world = {
+    width: 2000,
+    height: 2000
+};
+
+export { canvas, ctx, scoreEl, levelEl, expBarEl, world };

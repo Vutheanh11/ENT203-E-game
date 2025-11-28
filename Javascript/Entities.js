@@ -1,4 +1,4 @@
-import { ctx, canvas } from './Globals.js';
+import { ctx, canvas, world } from './Globals.js';
 
 export class Player {
     constructor(x, y, radius, color) {
@@ -7,11 +7,17 @@ export class Player {
         this.radius = radius;
         this.color = color;
         this.velocity = { x: 0, y: 0 };
-        this.speed = 1;
+        this.speed = 2;
         this.maxHealth = 150;
         this.health = 150;
         this.lastDamageTime = 0;
         this.invulnerableTime = 500; // ms
+        this.shield = {
+            unlocked: false,
+            active: false,
+            cooldown: 60000, // 60 seconds
+            lastBreakTime: 0
+        };
     }
 
     draw() {
@@ -154,18 +160,61 @@ export class Player {
              ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
              ctx.stroke();
         }
+
+        // Draw Shield (Pixel Art Style)
+        if (this.shield.active) {
+            ctx.save();
+            ctx.translate(this.x, this.y); // Translate to player position
+            const shieldRadius = this.radius + 12;
+            const pixelSize = 4;
+            const numSegments = 12; // Number of pixel blocks
+            const angleStep = (Math.PI * 2) / numSegments;
+            
+            // Rotate the whole shield slowly
+            const rotation = performance.now() / 500; 
+            
+            ctx.fillStyle = '#00E5FF'; // Cyan Neon
+            
+            // Outer Ring
+            for(let i=0; i<numSegments; i++) {
+                const angle = i * angleStep + rotation;
+                const sx = Math.cos(angle) * shieldRadius;
+                const sy = Math.sin(angle) * shieldRadius;
+                
+                // Draw pixel block
+                ctx.fillRect(sx - pixelSize/2, sy - pixelSize/2, pixelSize, pixelSize);
+            }
+            
+            // Inner Ring (Faint)
+            ctx.fillStyle = 'rgba(0, 229, 255, 0.5)';
+            for(let i=0; i<numSegments; i++) {
+                const angle = i * angleStep - rotation; // Counter rotate
+                const sx = Math.cos(angle) * (shieldRadius - 6);
+                const sy = Math.sin(angle) * (shieldRadius - 6);
+                ctx.fillRect(sx - 2, sy - 2, 4, 4);
+            }
+
+            ctx.restore();
+        }
     }
 
-    update() {
+    update(timestamp) {
         this.draw();
         this.x += this.velocity.x;
         this.y += this.velocity.y;
 
         // Boundary checks
         if (this.x - this.radius < 0) this.x = this.radius;
-        if (this.x + this.radius > canvas.width) this.x = canvas.width - this.radius;
+        if (this.x + this.radius > world.width) this.x = world.width - this.radius;
         if (this.y - this.radius < 0) this.y = this.radius;
-        if (this.y + this.radius > canvas.height) this.y = canvas.height - this.radius;
+        if (this.y + this.radius > world.height) this.y = world.height - this.radius;
+
+        // Shield Regeneration
+        if (this.shield.unlocked && !this.shield.active) {
+            if (timestamp - this.shield.lastBreakTime > this.shield.cooldown) {
+                this.shield.active = true;
+            }
+        }
     }
 }
 
@@ -232,40 +281,107 @@ export class Enemy {
     }
 
     draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        // Flip sprite based on movement direction
+        if (this.velocity.x < 0) {
+            ctx.scale(-1, 1);
+        }
+
         if (this.type === 'boss') {
             // Draw Pixel Art Skull for Boss
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            const scale = 4; // Scale up the pixel art
-            
-            ctx.fillStyle = '#FFFFFF'; // White skull
-            
-            // Skull Shape (Simplified Pixel Art)
-            // Main cranium
+            const scale = 4; 
+            ctx.fillStyle = '#FFFFFF'; 
             ctx.fillRect(-6 * scale, -8 * scale, 12 * scale, 10 * scale);
-            // Jaw
             ctx.fillRect(-4 * scale, 2 * scale, 8 * scale, 4 * scale);
-            
-            // Eyes (Black)
             ctx.fillStyle = '#000000';
             ctx.fillRect(-4 * scale, -4 * scale, 3 * scale, 3 * scale);
             ctx.fillRect(1 * scale, -4 * scale, 3 * scale, 3 * scale);
-            
-            // Nose
             ctx.fillRect(-1 * scale, 0, 2 * scale, 2 * scale);
-            
-            // Teeth
             ctx.fillRect(-3 * scale, 4 * scale, 1 * scale, 2 * scale);
             ctx.fillRect(-1 * scale, 4 * scale, 1 * scale, 2 * scale);
             ctx.fillRect(1 * scale, 4 * scale, 1 * scale, 2 * scale);
-            
-            ctx.restore();
+
+        } else if (this.type === 'small') {
+            // Baby Zombie Pixel
+            const scale = 2;
+            // Head (Disproportionately large)
+            ctx.fillStyle = '#8BC34A'; // Light Green
+            ctx.fillRect(-3 * scale, -5 * scale, 6 * scale, 5 * scale);
+            // Eyes
+            ctx.fillStyle = 'black';
+            ctx.fillRect(-2 * scale, -3 * scale, 1 * scale, 1 * scale);
+            ctx.fillRect(1 * scale, -3 * scale, 1 * scale, 1 * scale);
+            // Body
+            ctx.fillStyle = '#0288D1'; // Blue Shirt
+            ctx.fillRect(-2 * scale, 0, 4 * scale, 3 * scale);
+            // Arms (Outstretched)
+            ctx.fillStyle = '#8BC34A';
+            ctx.fillRect(2 * scale, 0, 3 * scale, 1 * scale); 
+            // Legs
+            ctx.fillStyle = '#303F9F'; // Dark Blue Pants
+            ctx.fillRect(-2 * scale, 3 * scale, 1.5 * scale, 2 * scale);
+            ctx.fillRect(0.5 * scale, 3 * scale, 1.5 * scale, 2 * scale);
+
+        } else if (this.type === 'elite') {
+            // Zombie Pixel
+            const scale = 2.5;
+            // Head
+            ctx.fillStyle = '#4CAF50'; // Green
+            ctx.fillRect(-2.5 * scale, -4 * scale, 5 * scale, 4 * scale);
+            // Eyes
+            ctx.fillStyle = 'black';
+            ctx.fillRect(-1.5 * scale, -2.5 * scale, 1 * scale, 1 * scale);
+            ctx.fillRect(1.5 * scale, -2.5 * scale, 1 * scale, 1 * scale);
+            // Body
+            ctx.fillStyle = '#5D4037'; // Brown Shirt
+            ctx.fillRect(-3 * scale, 0, 6 * scale, 5 * scale);
+            // Arms (Outstretched)
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(3 * scale, 0, 4 * scale, 1.5 * scale); 
+            // Legs
+            ctx.fillStyle = '#1A237E'; // Blue Pants
+            ctx.fillRect(-2.5 * scale, 5 * scale, 2 * scale, 4 * scale);
+            ctx.fillRect(0.5 * scale, 5 * scale, 2 * scale, 4 * scale);
+
+        } else if (this.type === 'big') {
+            // Armored Zombie Pixel
+            const scale = 3;
+            // Helmet
+            ctx.fillStyle = '#616161'; // Dark Grey Helmet
+            ctx.fillRect(-3 * scale, -5 * scale, 6 * scale, 3 * scale);
+            // Face (Visible part)
+            ctx.fillStyle = '#2E7D32'; // Dark Green
+            ctx.fillRect(-2.5 * scale, -2 * scale, 5 * scale, 2 * scale);
+            // Eyes (Red glowing)
+            ctx.fillStyle = '#D32F2F';
+            ctx.fillRect(-1.5 * scale, -1.5 * scale, 1 * scale, 1 * scale);
+            ctx.fillRect(1.5 * scale, -1.5 * scale, 1 * scale, 1 * scale);
+            // Chestplate
+            ctx.fillStyle = '#9E9E9E'; // Grey Armor
+            ctx.fillRect(-4 * scale, 0, 8 * scale, 6 * scale);
+            // Shoulders
+            ctx.fillStyle = '#757575';
+            ctx.fillRect(-5 * scale, -1 * scale, 2 * scale, 3 * scale); // Left
+            ctx.fillRect(3 * scale, -1 * scale, 2 * scale, 3 * scale); // Right
+            // Arms
+            ctx.fillStyle = '#2E7D32';
+            ctx.fillRect(4 * scale, 1 * scale, 4 * scale, 2 * scale);
+            // Legs (Greaves)
+            ctx.fillStyle = '#616161';
+            ctx.fillRect(-3 * scale, 6 * scale, 2.5 * scale, 5 * scale);
+            ctx.fillRect(0.5 * scale, 6 * scale, 2.5 * scale, 5 * scale);
+
         } else {
+            // Fallback
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
+            ctx.arc(0, 0, this.radius, 0, Math.PI * 2, false);
             ctx.fillStyle = this.color;
             ctx.fill();
         }
+        
+        ctx.restore();
         
         // Health bar above enemy
         ctx.fillStyle = 'red';
@@ -390,18 +506,268 @@ export class Spear {
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle); // Point outwards
         
-        // Draw Spear shaft
-        ctx.fillStyle = '#8B4513'; // Brown
-        ctx.fillRect(0, -2, this.length, 4);
+        const scale = 2;
+
+        // Pixel Spear
+        // Shaft
+        ctx.fillStyle = '#8D6E63'; // Wood Brown
+        ctx.fillRect(0, -1 * scale, this.length, 2 * scale);
         
-        // Draw Spear head
-        ctx.fillStyle = '#C0C0C0'; // Silver
+        // Grip/Handle details
+        ctx.fillStyle = '#5D4037'; // Darker Brown
+        ctx.fillRect(5 * scale, -1.5 * scale, 10 * scale, 3 * scale);
+
+        // Spear Head (Pixelated)
+        ctx.fillStyle = '#CFD8DC'; // Silver
+        // Base
+        ctx.fillRect(this.length, -2 * scale, 2 * scale, 4 * scale);
+        ctx.fillRect(this.length + 2 * scale, -2 * scale, 2 * scale, 4 * scale);
+        // Mid
+        ctx.fillRect(this.length + 4 * scale, -1.5 * scale, 2 * scale, 3 * scale);
+        ctx.fillRect(this.length + 6 * scale, -1 * scale, 2 * scale, 2 * scale);
+        // Tip
+        ctx.fillRect(this.length + 8 * scale, -0.5 * scale, 2 * scale, 1 * scale);
+        
+        // Shine
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(this.length + 2 * scale, -1 * scale, 4 * scale, 1 * scale);
+
+        ctx.restore();
+    }
+}
+
+export class Pet {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 10;
+        this.lastBombTime = 0;
+        this.level = 1;
+        this.setNextDropTime();
+        this.followSpeed = 0.05; // Lerp factor
+    }
+
+    setNextDropTime() {
+        // Random interval between 5000ms (5s) and 8000ms (8s)
+        this.currentInterval = 5000 + Math.random() * 3000;
+    }
+
+    levelUp() {
+        this.level++;
+    }
+
+    update(player, timestamp, bombs, enemies) {
+        // Find nearest enemy
+        let target = null;
+        let minDist = Infinity;
+
+        if (enemies) {
+            enemies.forEach(enemy => {
+                const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+                if (dist < minDist && dist <= 300) { // Range limit 300px
+                    minDist = dist;
+                    target = enemy;
+                }
+            });
+        }
+
+        let targetX, targetY;
+        // Chase nearest enemy if exists, otherwise follow player
+        if (target) {
+             targetX = target.x;
+             targetY = target.y;
+        } else {
+             targetX = player.x - 30;
+             targetY = player.y - 30;
+        }
+
+        // Smooth move
+        this.x += (targetX - this.x) * this.followSpeed;
+        this.y += (targetY - this.y) * this.followSpeed;
+
+        this.draw();
+
+        // Drop Bomb
+        // Calculate effective interval based on level (10% faster per level)
+        const effectiveInterval = this.currentInterval / (1 + (this.level - 1) * 0.1);
+
+        if (timestamp - this.lastBombTime > effectiveInterval) {
+            bombs.push(new Bomb(this.x, this.y));
+            this.lastBombTime = timestamp;
+            this.setNextDropTime();
+        }
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const scale = 2;
+
+        // Pixel Pet (Floating Robot)
+        // Body
+        ctx.fillStyle = '#00BCD4'; // Cyan
+        ctx.fillRect(-3 * scale, -3 * scale, 6 * scale, 6 * scale);
+        // Eye
+        ctx.fillStyle = 'white';
+        ctx.fillRect(-1 * scale, -1 * scale, 2 * scale, 2 * scale);
+        // Antenna
+        ctx.fillStyle = '#B0BEC5';
+        ctx.fillRect(-0.5 * scale, -5 * scale, 1 * scale, 2 * scale);
+        // Thruster
+        ctx.fillStyle = '#FF5722';
+        ctx.fillRect(-2 * scale, 3 * scale, 4 * scale, 1 * scale);
+
+        ctx.restore();
+    }
+}
+
+export class Bomb {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 10;
+        this.timer = 60; // Frames until explosion (~1 sec)
+        this.exploded = false;
+        this.damage = 50;
+        this.range = 100;
+    }
+
+    update() {
+        this.timer--;
+        if (this.timer <= 0) {
+            this.exploded = true;
+        }
+        this.draw();
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const scale = 2;
+
+        // Pixel Bomb
+        // Body
+        ctx.fillStyle = '#212121'; // Black
         ctx.beginPath();
-        ctx.moveTo(this.length + 15, 0);
-        ctx.lineTo(this.length, -6);
-        ctx.lineTo(this.length, 6);
+        ctx.arc(0, 0, 5 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Fuse
+        ctx.fillStyle = '#F57F17'; // Orange
+        ctx.fillRect(-1 * scale, -7 * scale, 2 * scale, 3 * scale);
+        
+        // Spark (Blinking)
+        if (Math.floor(Date.now() / 100) % 2 === 0) {
+            ctx.fillStyle = '#FFEB3B'; // Yellow
+            ctx.fillRect(-1 * scale, -9 * scale, 2 * scale, 2 * scale);
+        }
+
+        // Pulse effect before explosion
+        if (this.timer < 20 && Math.floor(Date.now() / 50) % 2 === 0) {
+             ctx.fillStyle = 'red';
+             ctx.globalAlpha = 0.5;
+             ctx.beginPath();
+             ctx.arc(0, 0, 6 * scale, 0, Math.PI * 2);
+             ctx.fill();
+        }
+
+        ctx.restore();
+    }
+}
+
+export class DamageNumber {
+    constructor(x, y, damage, isCrit) {
+        this.x = x;
+        this.y = y;
+        this.damage = damage;
+        this.isCrit = isCrit;
+        this.alpha = 1;
+        this.velocity = { x: (Math.random() - 0.5) * 2, y: -2 };
+        this.life = 60; // Frames
+    }
+
+    update() {
+        this.x += this.velocity.x;
+        this.y += this.velocity.y;
+        this.alpha -= 0.015;
+        this.life--;
+        this.draw();
+    }
+
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.font = this.isCrit ? 'bold 24px Arial' : '16px Arial';
+        ctx.fillStyle = this.isCrit ? '#FFD700' : '#FFFFFF'; // Gold for crit, White for normal
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = this.isCrit ? 3 : 2;
+        ctx.textAlign = 'center';
+        
+        const text = Math.floor(this.damage);
+        ctx.strokeText(text, this.x, this.y);
+        ctx.fillText(text, this.x, this.y);
+        
+        ctx.restore();
+    }
+}
+
+export class FirePatch {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 50; // Area of effect
+        this.duration = 3000; // 3 seconds
+        this.creationTime = performance.now();
+        this.tickInterval = 500; // Damage every 0.5s
+        this.lastTick = 0;
+        this.damageMin = 2;
+        this.damageMax = 6;
+    }
+
+    update(timestamp, enemies, damageNumbers) {
+        // Check duration
+        if (timestamp - this.creationTime > this.duration) {
+            return false; // Expired
+        }
+
+        // Deal damage on tick
+        if (timestamp - this.lastTick > this.tickInterval) {
+            this.lastTick = timestamp;
+            
+            enemies.forEach(enemy => {
+                const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+                if (dist < this.radius + enemy.radius) {
+                    const damage = Math.floor(Math.random() * (this.damageMax - this.damageMin + 1)) + this.damageMin;
+                    enemy.health -= damage;
+                    damageNumbers.push(new DamageNumber(enemy.x, enemy.y, damage, false));
+                }
+            });
+        }
+
+        this.draw();
+        return true; // Active
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        // Flickering fire effect
+        const flicker = Math.random() * 0.2 + 0.8;
+        const scale = flicker;
+
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#FF5722'; // Deep Orange
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius * scale, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#FFEB3B'; // Yellow center
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius * 0.6 * scale, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
     }
 }
+

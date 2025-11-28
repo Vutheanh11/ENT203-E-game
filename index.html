@@ -18,6 +18,35 @@
         <div class="level-label">Level: <span id="level-display">1</span></div>
     </div>
 
+    <!-- Guide Button -->
+    <button id="guide-btn" class="pixel-btn guide-btn">?</button>
+
+    <!-- Mobile Controls Toggle -->
+    <button id="mobile-toggle-btn" class="pixel-btn mobile-toggle-btn">📱</button>
+
+    <!-- Joystick Controls -->
+    <div id="joystick-container" class="joystick-container hidden">
+        <div id="joystick-base" class="joystick-base">
+            <div id="joystick-stick" class="joystick-stick"></div>
+        </div>
+    </div>
+
+    <!-- Guide Modal -->
+    <div id="guide-modal" class="modal hidden">
+        <div class="modal-content guide-content">
+            <span class="close-btn" id="close-guide">&times;</span>
+            <h2>Survival Guide</h2>
+            <div class="guide-tabs">
+                <button class="tab-btn active" data-tab="items">Items</button>
+                <button class="tab-btn" data-tab="bosses">Bosses</button>
+                <button class="tab-btn" data-tab="mechanics">Mechanics</button>
+            </div>
+            <div id="guide-body" class="guide-body">
+                <!-- Content injected by JS -->
+            </div>
+        </div>
+    </div>
+
     <!-- Math Quiz Modal -->
     <div id="math-modal" class="modal hidden">
         <div class="modal-content">

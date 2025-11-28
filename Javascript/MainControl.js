@@ -1,6 +1,6 @@
-import { canvas, ctx, scoreEl, levelEl, expBarEl } from './Globals.js';
-import { Player, Projectile, Enemy, Particle, Sawblade, Spear } from './Entities.js';
-import { ExpGem, showUpgradeOptions } from './Item.js';
+import { canvas, ctx, scoreEl, levelEl, expBarEl, world } from './Globals.js';
+import { Player, Projectile, Enemy, Particle, Sawblade, Spear, Pet, Bomb, DamageNumber, FirePatch } from './Entities.js';
+import { ExpGem, showUpgradeOptions, Magnet, Meat, drawIcon } from './Item.js';
 import { startMathQuiz } from './Quiz.js';
 
 const x = canvas.width / 2;
@@ -11,8 +11,13 @@ let projectiles = [];
 let enemies = [];
 let particles = [];
 let expGems = [];
+let items = [];
 let sawblades = [];
 let spears = [];
+let bombs = [];
+let damageNumbers = [];
+let firePatches = [];
+let pet = null;
 
 let animationId;
 let score = 0;
@@ -21,7 +26,7 @@ let exp = 0;
 let expToNextLevel = 100;
 let difficultyMultiplier = 1;
 let isPaused = false;
-let playerDamage = 20;
+let playerDamage = 10;
 let fireRate = 1000; // ms
 let lastFired = 0;
 let projectileCount = 1;
@@ -33,11 +38,93 @@ let upgradeLevels = {
     fireRate: 0,
     multishot: 0,
     sawblade: 0,
-    spear: 0
+    spear: 0,
+    pet: 0,
+    shield: 0,
+    fireRain: 0
 };
 const MAX_LEVEL = 4;
 
 let bossSpawnCount = 0;
+
+// Background Canvas
+const bgCanvas = document.createElement('canvas');
+const bgCtx = bgCanvas.getContext('2d');
+
+function generateRuinedStreetBackground() {
+    bgCanvas.width = world.width;
+    bgCanvas.height = world.height;
+
+    // 1. Base Asphalt
+    bgCtx.fillStyle = '#2c2c2c';
+    bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+    // 2. Noise/Texture
+    for (let i = 0; i < 7000; i++) { // Adjusted for 2000x2000 map
+        const x = Math.random() * bgCanvas.width;
+        const y = Math.random() * bgCanvas.height;
+        const size = Math.random() * 3;
+        bgCtx.fillStyle = Math.random() > 0.5 ? '#333' : '#222';
+        bgCtx.fillRect(x, y, size, size);
+    }
+
+    // 3. Road Markings (Faded)
+    bgCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    const laneWidth = 100;
+    const dashHeight = 40;
+    const gapHeight = 60;
+    
+    // Vertical Road
+    const centerX = bgCanvas.width / 2;
+    for (let y = 0; y < bgCanvas.height; y += dashHeight + gapHeight) {
+        bgCtx.fillRect(centerX - 5, y, 10, dashHeight);
+    }
+    
+    // Horizontal Road
+    const centerY = bgCanvas.height / 2;
+    for (let x = 0; x < bgCanvas.width; x += dashHeight + gapHeight) {
+        bgCtx.fillRect(x, centerY - 5, dashHeight, 10);
+    }
+
+    // 4. Cracks
+    bgCtx.strokeStyle = '#111';
+    bgCtx.lineWidth = 2;
+    for (let i = 0; i < 100; i++) { // More cracks
+        bgCtx.beginPath();
+        let cx = Math.random() * bgCanvas.width;
+        let cy = Math.random() * bgCanvas.height;
+        bgCtx.moveTo(cx, cy);
+        for (let j = 0; j < 5; j++) {
+            cx += (Math.random() - 0.5) * 50;
+            cy += (Math.random() - 0.5) * 50;
+            bgCtx.lineTo(cx, cy);
+        }
+        bgCtx.stroke();
+    }
+
+    // 5. Rubble/Debris
+    for (let i = 0; i < 200; i++) { // More rubble
+        const rx = Math.random() * bgCanvas.width;
+        const ry = Math.random() * bgCanvas.height;
+        const rSize = Math.random() * 20 + 5;
+        
+        bgCtx.fillStyle = '#444';
+        bgCtx.beginPath();
+        bgCtx.arc(rx, ry, rSize, 0, Math.PI * 2);
+        bgCtx.fill();
+        
+        // Highlight
+        bgCtx.fillStyle = '#555';
+        bgCtx.beginPath();
+        bgCtx.arc(rx - 2, ry - 2, rSize * 0.5, 0, Math.PI * 2);
+        bgCtx.fill();
+    }
+}
+
+// Call immediately to ensure background exists before animation starts
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+generateRuinedStreetBackground();
 
 // Spear Logic
 // Removed cooldown logic as spears are now permanent orbiting objects
@@ -46,24 +133,31 @@ function init() {
     if (animationId) {
         cancelAnimationFrame(animationId);
     }
-    player = new Player(canvas.width / 2, canvas.height / 2, 15, 'white');
+    player = new Player(world.width / 2, world.height / 2, 15, 'white');
     projectiles = [];
     enemies = [];
     particles = [];
     expGems = [];
+    items = [];
     sawblades = [];
     spears = [];
+    bombs = [];
+    damageNumbers = [];
+    firePatches = [];
+    pet = null;
     score = 0;
     level = 1;
     exp = 0;
     expToNextLevel = 100;
     difficultyMultiplier = 1;
     isPaused = false;
-    playerDamage = 20;
+    playerDamage = 10;
     fireRate = 1000;
     projectileCount = 1;
     bossSpawnCount = 0;
     
+    generateRuinedStreetBackground(); // Generate BG on init
+
     // Reset Upgrades
     upgradeLevels = {
         damage: 0,
@@ -71,7 +165,10 @@ function init() {
         fireRate: 0,
         multishot: 0,
         sawblade: 0,
-        spear: 0
+        spear: 0,
+        pet: 0,
+        shield: 0,
+        fireRain: 0
     };
 
     scoreEl.innerHTML = score;
@@ -91,19 +188,25 @@ function spawnEnemies() {
         let x;
         let y;
 
-        if (Math.random() < 0.5) {
-            x = Math.random() < 0.5 ? 0 - radius : canvas.width + radius;
-            y = Math.random() * canvas.height;
-        } else {
-            x = Math.random() * canvas.width;
-            y = Math.random() < 0.5 ? 0 - radius : canvas.height + radius;
-        }
+        // Spawn outside the camera view but within world bounds if possible, 
+        // or just spawn at edges of world?
+        // Let's spawn around the player but outside view
+        
+        const spawnRadius = Math.max(canvas.width, canvas.height) / 2 + 100;
+        const angle = Math.random() * Math.PI * 2;
+        
+        x = player.x + Math.cos(angle) * spawnRadius;
+        y = player.y + Math.sin(angle) * spawnRadius;
+
+        // Clamp to world bounds
+        x = Math.max(radius, Math.min(x, world.width - radius));
+        y = Math.max(radius, Math.min(y, world.height - radius));
 
         const color = `hsl(${Math.random() * 360}, 50%, 50%)`;
-        const angle = Math.atan2(canvas.height / 2 - y, canvas.width / 2 - x);
+        const velocityAngle = Math.atan2(player.y - y, player.x - x);
         const velocity = {
-            x: Math.cos(angle),
-            y: Math.sin(angle)
+            x: Math.cos(velocityAngle),
+            y: Math.sin(velocityAngle)
         };
 
         // Enemy Types & Spawn Rates
@@ -164,8 +267,12 @@ function spawnEnemies() {
 
 function spawnBoss() {
     bossSpawnCount++;
-    const x = canvas.width / 2;
-    const y = -100; // Spawn top
+    const x = world.width / 2;
+    const y = -100; // Spawn top (outside world?) or just top of world
+    // Let's spawn boss near player but far enough
+    const spawnX = player.x;
+    const spawnY = Math.max(100, player.y - 500);
+
     const radius = 80;
     const color = '#FF0000';
     const velocity = { x: 0, y: 0.5 }; // Slow move
@@ -177,7 +284,7 @@ function spawnBoss() {
     const baseHp = 1000;
     const health = baseHp + (baseHp * 0.3 * (bossSpawnCount - 1));
     
-    const boss = new Enemy(x, y, radius, color, velocity, health, 'boss', 20);
+    const boss = new Enemy(spawnX, spawnY, radius, color, velocity, health, 'boss', 20);
     boss.isBoss = true;
     enemies.push(boss);
     alert(`BOSS FIGHT STARTED! (HP: ${health})`);
@@ -262,6 +369,22 @@ function updateStats(type, value) {
         for(let i=0; i<count; i++) {
             spears.push(new Spear(player, (Math.PI * 2 * i) / count));
         }
+    } else if (type === 'pet') {
+        if (!pet) {
+            pet = new Pet(player.x, player.y);
+        } else {
+            pet.levelUp();
+        }
+    } else if (type === 'shield') {
+        if (!player.shield.unlocked) {
+            player.shield.unlocked = true;
+            player.shield.active = true;
+        } else {
+            // Reduce cooldown by 5%
+            player.shield.cooldown *= 0.95;
+        }
+    } else if (type === 'fireRain') {
+        // Just increment level, logic is in animate
     }
 }
 
@@ -273,10 +396,105 @@ function updateExpBar() {
 function animate(timestamp) {
     if (isPaused) return;
     animationId = requestAnimationFrame(animate);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'; // Trail effect
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    player.update();
+    // Camera Logic
+    // Center camera on player
+    let cameraX = player.x - canvas.width / 2;
+    let cameraY = player.y - canvas.height / 2;
+
+    // Clamp camera to world bounds
+    cameraX = Math.max(0, Math.min(cameraX, world.width - canvas.width));
+    cameraY = Math.max(0, Math.min(cameraY, world.height - canvas.height));
+
+    // Clear screen (not strictly necessary if we draw full bg, but good practice)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(-cameraX, -cameraY);
+
+    // Draw Background
+    ctx.drawImage(bgCanvas, 0, 0);
+    
+    player.update(timestamp);
+    
+    // Pet Logic
+    if (pet) {
+        pet.update(player, timestamp, bombs, enemies);
+    }
+
+    // Fire Rain Logic
+    if (upgradeLevels.fireRain > 0) {
+        // Cooldown 2s (can be adjusted or scaled with level)
+        const fireRainCooldown = 2000; 
+        // Use a global or persistent variable for lastFireRainTime. 
+        // Since I can't easily add a global var without reading whole file again or being messy,
+        // I'll attach it to the player or upgradeLevels object for now, or just use a static-like property on the function if JS supported it easily.
+        // Better: check if it exists on window/global scope or just add it to upgradeLevels as a property? No.
+        // I'll add it to the `player` object as a temporary hack or just assume I can add a variable at top level.
+        // Wait, I can't add a top level variable easily now.
+        // I'll add `lastFireRainTime` to `player` object.
+        if (!player.lastFireRainTime) player.lastFireRainTime = 0;
+
+        if (timestamp - player.lastFireRainTime > fireRainCooldown) {
+            // Spawn Fire Patch
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.random() * 200;
+            const fx = player.x + Math.cos(angle) * dist;
+            const fy = player.y + Math.sin(angle) * dist;
+            
+            firePatches.push(new FirePatch(fx, fy));
+            player.lastFireRainTime = timestamp;
+        }
+    }
+
+    // Update Fire Patches
+    firePatches.forEach((fp, index) => {
+        const active = fp.update(timestamp, enemies, damageNumbers);
+        if (!active) {
+            firePatches.splice(index, 1);
+        }
+    });
+
+    // Bomb Logic
+    bombs.forEach((bomb, bIndex) => {
+        bomb.update();
+        
+        if (bomb.exploded) {
+            // Check collision with enemies
+            enemies.forEach((enemy, eIndex) => {
+                const dist = Math.hypot(bomb.x - enemy.x, bomb.y - enemy.y);
+                if (dist < bomb.range + enemy.radius) {
+                    enemy.health -= 50; // Bomb damage
+                    if (enemy.health <= 0) {
+                        killEnemy(enemy, eIndex);
+                    }
+                }
+            });
+            
+            // Remove bomb after explosion frame
+            setTimeout(() => {
+                // Check if it still exists to avoid double splice
+                const idx = bombs.indexOf(bomb);
+                if (idx > -1) bombs.splice(idx, 1);
+            }, 100); 
+            bombs.splice(bIndex, 1);
+            
+            // Create explosion particles
+            for (let i = 0; i < 20; i++) {
+                particles.push(new Particle(
+                    bomb.x, 
+                    bomb.y, 
+                    Math.random() * 3, 
+                    'orange', 
+                    {
+                        x: (Math.random() - 0.5) * 10,
+                        y: (Math.random() - 0.5) * 10
+                    }
+                ));
+            }
+        }
+    });
+
     autoAttack(timestamp);
     // handleSpears(timestamp); // Removed, spears are now permanent
 
@@ -304,6 +522,14 @@ function animate(timestamp) {
             particles.splice(index, 1);
         } else {
             particle.update();
+        }
+    });
+
+    damageNumbers.forEach((dn, index) => {
+        if (dn.life <= 0) {
+            damageNumbers.splice(index, 1);
+        } else {
+            dn.update();
         }
     });
 
@@ -345,15 +571,37 @@ function animate(timestamp) {
         }
     });
 
+    items.forEach((item, index) => {
+        item.update();
+        
+        const dist = Math.hypot(player.x - item.x, player.y - item.y);
+        if (dist - player.radius - item.radius < 1) {
+            if (item.type === 'magnet') {
+                // Magnetize all gems
+                expGems.forEach(gem => {
+                    gem.magnetized = true;
+                    gem.speed = 12; // Pull fast
+                });
+            } else if (item.type === 'meat') {
+                // Heal player
+                player.health = Math.min(player.maxHealth, player.health + item.healAmount);
+                // Visual feedback for heal
+                damageNumbers.push(new DamageNumber(player.x, player.y - 20, item.healAmount, false)); // Reuse damage number for heal?
+                // Maybe add a green particle effect later
+            }
+            items.splice(index, 1);
+        }
+    });
+
     projectiles.forEach((projectile, index) => {
         projectile.update();
 
-        // Remove from edges
+        // Remove from edges (World bounds)
         if (
             projectile.x + projectile.radius < 0 ||
-            projectile.x - projectile.radius > canvas.width ||
+            projectile.x - projectile.radius > world.width ||
             projectile.y + projectile.radius < 0 ||
-            projectile.y - projectile.radius > canvas.height
+            projectile.y - projectile.radius > world.height
         ) {
             setTimeout(() => {
                 projectiles.splice(index, 1);
@@ -368,7 +616,23 @@ function animate(timestamp) {
 
         // Player Collision (Damage)
         if (dist - enemy.radius - player.radius < 1) {
-            if (performance.now() - player.lastDamageTime > player.invulnerableTime) {
+            if (player.shield.active) {
+                player.shield.active = false;
+                player.shield.lastBreakTime = performance.now();
+                // Visual effect for shield break
+                for (let i = 0; i < 10; i++) {
+                    particles.push(new Particle(
+                        player.x, 
+                        player.y, 
+                        Math.random() * 3, 
+                        '#00BFFF', 
+                        {
+                            x: (Math.random() - 0.5) * 5,
+                            y: (Math.random() - 0.5) * 5
+                        }
+                    ));
+                }
+            } else if (performance.now() - player.lastDamageTime > player.invulnerableTime) {
                 player.health -= 10; // Take 10 damage
                 player.lastDamageTime = performance.now();
                 
@@ -400,7 +664,14 @@ function animate(timestamp) {
                 }
 
                 // Reduce health
-                enemy.health -= playerDamage;
+                let damage = playerDamage;
+                let isCrit = Math.random() < 0.2; // 20% chance
+                if (isCrit) {
+                    damage *= 1.5; // 150% damage
+                }
+
+                enemy.health -= damage;
+                damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, isCrit));
 
                 if (enemy.health <= 0) {
                     killEnemy(enemy, index);
@@ -416,6 +687,8 @@ function animate(timestamp) {
             }
         });
     });
+
+    ctx.restore();
 }
 
 function handleSpears(timestamp) {
@@ -450,6 +723,14 @@ function killEnemy(enemy, index) {
     const expValue = Math.floor(enemy.radius + (difficultyMultiplier * 10));
     expGems.push(new ExpGem(enemy.x, enemy.y, expValue));
     
+    // Drop Special Items (Magnet / Meat)
+    const rand = Math.random();
+    if (rand < 0.01) { // 1% Chance for Magnet
+        items.push(new Magnet(enemy.x, enemy.y));
+    } else if (rand < 0.03) { // 2% Chance for Meat (checked after magnet, so effectively 2% of remaining 99%)
+        items.push(new Meat(enemy.x, enemy.y));
+    }
+
     // Add score based on enemy type
     // We need to pass the score value to updateExp or update score directly here
     // Let's update updateExp to take score value separately or just add score here
@@ -500,7 +781,7 @@ function autoAttack(timestamp) {
         // If count is 1, angle is baseAngle
         // If count > 1, spread them out
         
-        const spreadAngle = Math.PI / 6; // 30 degrees total spread maybe?
+        const spreadAngle = Math.PI / 18; // 10 degrees - Tighter spread to ensure hits
         
         for(let i=0; i<projectileCount; i++) {
             let angle = baseAngle;
@@ -549,20 +830,278 @@ window.addEventListener('keyup', (event) => {
 });
 
 function updatePlayerVelocity() {
-    player.velocity.x = 0;
-    player.velocity.y = 0;
+    let dx = 0;
+    let dy = 0;
 
-    if (keys.w) player.velocity.y -= player.speed;
-    if (keys.s) player.velocity.y += player.speed;
-    if (keys.a) player.velocity.x -= player.speed;
-    if (keys.d) player.velocity.x += player.speed;
+    // Keyboard
+    if (keys.w) dy -= 1;
+    if (keys.s) dy += 1;
+    if (keys.a) dx -= 1;
+    if (keys.d) dx += 1;
+
+    // Joystick
+    if (isMobileMode) {
+        dx += joystickVector.x;
+        dy += joystickVector.y;
+    }
+
+    // Normalize direction
+    const magnitude = Math.hypot(dx, dy);
+    if (magnitude > 0) {
+        // Cap magnitude at 1 so we don't go faster than max speed
+        // If using keyboard diagonal (1.414), normalize to 1
+        const finalScale = magnitude > 1 ? 1 / magnitude : 1;
+        
+        player.velocity.x = dx * finalScale * player.speed;
+        player.velocity.y = dy * finalScale * player.speed;
+    } else {
+        player.velocity.x = 0;
+        player.velocity.y = 0;
+    }
 }
 
 window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    generateRuinedStreetBackground(); // Regenerate BG on resize
     init(); 
 });
+
+// Guide Logic
+const guideBtn = document.getElementById('guide-btn');
+const guideModal = document.getElementById('guide-modal');
+const closeGuideBtn = document.getElementById('close-guide');
+const guideBody = document.getElementById('guide-body');
+const tabBtns = document.querySelectorAll('.tab-btn');
+
+const guideContent = {
+    items: `
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="magnet"></div>
+            <div class="guide-info">
+                <h3>Magnet</h3>
+                <p>Drops from enemies (1% chance).</p>
+                <p>Effect: Pulls all EXP gems to you instantly.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="meat"></div>
+            <div class="guide-info">
+                <h3>Meat</h3>
+                <p>Drops from enemies (2% chance).</p>
+                <p>Effect: Heals 50 HP.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="sawblade"></div>
+            <div class="guide-info">
+                <h3>Sawblade</h3>
+                <p>Upgrade Item.</p>
+                <p>Effect: Orbiting blade that deals 20 damage.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="spear"></div>
+            <div class="guide-info">
+                <h3>Spear</h3>
+                <p>Upgrade Item.</p>
+                <p>Effect: Long range thrusting weapon. Deals 10 damage.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="pet"></div>
+            <div class="guide-info">
+                <h3>Pet</h3>
+                <p>Upgrade Item.</p>
+                <p>Effect: Follows you and drops bombs (50 DMG) every 2s.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="shield"></div>
+            <div class="guide-info">
+                <h3>Energy Shield</h3>
+                <p>Upgrade Item.</p>
+                <p>Effect: Blocks 1 hit completely. Recharges over time.</p>
+            </div>
+        </div>
+    `,
+    bosses: `
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="boss"></div>
+            <div class="guide-info">
+                <h3>Giant Skull</h3>
+                <p>Spawns every 10 levels.</p>
+                <p>HP: Scales with spawn count (1000 + 30%).</p>
+                <p>Behavior: Slow moving, massive damage.</p>
+            </div>
+        </div>
+    `,
+    mechanics: `
+        <div class="guide-item">
+            <div class="guide-info">
+                <h3>Level Up</h3>
+                <p>Collect EXP gems to level up. Every level grants a new upgrade.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-info">
+                <h3>Math Quiz</h3>
+                <p>Every level up triggers a math quiz. Solve it to get your upgrade!</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-info">
+                <h3>Critical Hits</h3>
+                <p>20% chance to deal 150% damage.</p>
+            </div>
+        </div>
+    `
+};
+
+function openGuide() {
+    isPaused = true;
+    cancelAnimationFrame(animationId);
+    guideModal.classList.remove('hidden');
+    loadGuideTab('items'); // Default tab
+}
+
+function closeGuide() {
+    guideModal.classList.add('hidden');
+    isPaused = false;
+    animate(performance.now());
+}
+
+function loadGuideTab(tabName) {
+    guideBody.innerHTML = guideContent[tabName];
+    tabBtns.forEach(btn => {
+        if (btn.dataset.tab === tabName) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Render Icons
+    const iconContainers = guideBody.querySelectorAll('.guide-icon-container');
+    iconContainers.forEach(container => {
+        const type = container.dataset.icon;
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        drawIcon(ctx, type, 64, 64);
+        container.appendChild(canvas);
+    });
+}
+
+guideBtn.addEventListener('click', openGuide);
+closeGuideBtn.addEventListener('click', closeGuide);
+
+tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        loadGuideTab(btn.dataset.tab);
+    });
+});
+
+// Joystick Logic
+const mobileToggleBtn = document.getElementById('mobile-toggle-btn');
+const joystickContainer = document.getElementById('joystick-container');
+const joystickBase = document.getElementById('joystick-base');
+const joystickStick = document.getElementById('joystick-stick');
+
+let isMobileMode = false;
+let joystickActive = false;
+let joystickVector = { x: 0, y: 0 };
+const maxJoystickRadius = 50;
+
+mobileToggleBtn.addEventListener('click', () => {
+    isMobileMode = !isMobileMode;
+    if (isMobileMode) {
+        joystickContainer.classList.remove('hidden');
+        mobileToggleBtn.classList.add('active');
+    } else {
+        joystickContainer.classList.add('hidden');
+        mobileToggleBtn.classList.remove('active');
+        joystickVector = { x: 0, y: 0 };
+        updatePlayerVelocity();
+    }
+});
+
+// Touch Events for Joystick
+joystickContainer.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    joystickActive = true;
+    handleJoystickMove(e.touches[0]);
+}, { passive: false });
+
+joystickContainer.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (joystickActive) {
+        handleJoystickMove(e.touches[0]);
+    }
+}, { passive: false });
+
+joystickContainer.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    resetJoystick();
+});
+
+// Mouse Events for Joystick (for PC testing)
+joystickContainer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    joystickActive = true;
+    handleJoystickMove(e);
+    
+    // Bind window events to handle dragging outside
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+});
+
+function handleWindowMouseMove(e) {
+    if (joystickActive) {
+        handleJoystickMove(e);
+    }
+}
+
+function handleWindowMouseUp(e) {
+    joystickActive = false;
+    resetJoystick();
+    window.removeEventListener('mousemove', handleWindowMouseMove);
+    window.removeEventListener('mouseup', handleWindowMouseUp);
+}
+
+function resetJoystick() {
+    joystickActive = false;
+    joystickVector = { x: 0, y: 0 };
+    joystickStick.style.transform = `translate(0px, 0px)`;
+    updatePlayerVelocity();
+}
+
+function handleJoystickMove(input) {
+    const rect = joystickBase.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const deltaX = input.clientX - centerX;
+    const deltaY = input.clientY - centerY;
+    const distance = Math.hypot(deltaX, deltaY);
+
+    const angle = Math.atan2(deltaY, deltaX);
+    const clampedDistance = Math.min(distance, maxJoystickRadius);
+
+    const stickX = Math.cos(angle) * clampedDistance;
+    const stickY = Math.sin(angle) * clampedDistance;
+
+    joystickStick.style.transform = `translate(${stickX}px, ${stickY}px)`;
+
+    // Normalize vector for velocity (0 to 1)
+    joystickVector = {
+        x: stickX / maxJoystickRadius,
+        y: stickY / maxJoystickRadius
+    };
+    
+    updatePlayerVelocity();
+}
 
 spawnEnemies();
 animate();
