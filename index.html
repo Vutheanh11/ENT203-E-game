@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Shooter Game</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="CSS/Game.css">
+</head>
+<body>
+    <div class="ui-container">
+        <div class="exp-container">
+            <div class="exp-label">EXP: <span id="exp-score">0</span></div>
+            <div class="exp-bar-background">
+                <div id="exp-bar" class="exp-bar-fill"></div>
+            </div>
+        </div>
+        <div class="level-label">Level: <span id="level-display">1</span></div>
+    </div>
+
+    <!-- Math Quiz Modal -->
+    <div id="math-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Math Challenge!</h2>
+            <p>Solve to get an upgrade!</p>
+            <div id="timer-display" class="timer">30s</div>
+            <div id="math-question" class="math-question">1 + 1 = ?</div>
+            <input type="number" id="math-answer" class="math-input" placeholder="?" autofocus>
+            <button id="submit-answer" class="pixel-btn">Submit</button>
+        </div>
+    </div>
+
+    <!-- Level Up Modal -->
+    <div id="level-up-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Level Up!</h2>
+            <p>Choose an upgrade:</p>
+            <div id="upgrade-options" class="upgrade-options">
+                <!-- Options will be injected here by JS -->
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <script type="module" src="Javascript/MainControl.js"></script>
+</body>
+</html>
