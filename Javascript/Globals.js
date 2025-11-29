@@ -13,4 +13,6 @@ const world = {
     height: 2000
 };
 
-export { canvas, ctx, scoreEl, levelEl, expBarEl, world };
+const buildings = [];
+
+export { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings };

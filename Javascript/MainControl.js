@@ -1,6 +1,6 @@
-import { canvas, ctx, scoreEl, levelEl, expBarEl, world } from './Globals.js';
-import { Player, Projectile, Enemy, Particle, Sawblade, Spear, Pet, Bomb, DamageNumber, FirePatch } from './Entities.js';
-import { ExpGem, showUpgradeOptions, Magnet, Meat, drawIcon } from './Item.js';
+import { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings } from './Globals.js';
+import { Player, Projectile, Enemy, Particle, Sawblade, Spear, Pet, Bomb, DamageNumber, FirePatch, Chest, Building, ShotEffect, HitEffect, Drone } from './Entities.js';
+import { ExpGem, showUpgradeOptions, Magnet, Meat, drawIcon, NightVision } from './Item.js';
 import { startMathQuiz } from './Quiz.js';
 
 const x = canvas.width / 2;
@@ -10,6 +10,7 @@ let player = new Player(x, y, 15, 'white');
 let projectiles = [];
 let enemies = [];
 let particles = [];
+let effects = []; // For ShotEffect and HitEffect
 let expGems = [];
 let items = [];
 let sawblades = [];
@@ -17,7 +18,12 @@ let spears = [];
 let bombs = [];
 let damageNumbers = [];
 let firePatches = [];
+let chests = [];
 let pet = null;
+let drone = null;
+
+let nightVisionActive = false;
+let nightVisionEndTime = 0;
 
 let animationId;
 let score = 0;
@@ -30,6 +36,7 @@ let playerDamage = 10;
 let fireRate = 1000; // ms
 let lastFired = 0;
 let projectileCount = 1;
+let lastChestSpawnTime = 0; // Track chest spawn time
 
 // Upgrade Tracking
 let upgradeLevels = {
@@ -54,70 +61,142 @@ const bgCtx = bgCanvas.getContext('2d');
 function generateRuinedStreetBackground() {
     bgCanvas.width = world.width;
     bgCanvas.height = world.height;
+    
+    const pixelSize = 4; // Size of one "pixel" in the background
 
     // 1. Base Asphalt
     bgCtx.fillStyle = '#2c2c2c';
     bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
-    // 2. Noise/Texture
-    for (let i = 0; i < 7000; i++) { // Adjusted for 2000x2000 map
-        const x = Math.random() * bgCanvas.width;
-        const y = Math.random() * bgCanvas.height;
-        const size = Math.random() * 3;
-        bgCtx.fillStyle = Math.random() > 0.5 ? '#333' : '#222';
-        bgCtx.fillRect(x, y, size, size);
+    // 2. Tiled Grid (Optional, for "tile" look)
+    bgCtx.strokeStyle = '#222';
+    bgCtx.lineWidth = pixelSize;
+    const tileSize = 64;
+    
+    // Draw grid lines
+    for (let x = 0; x < bgCanvas.width; x += tileSize) {
+        bgCtx.beginPath();
+        bgCtx.moveTo(x, 0);
+        bgCtx.lineTo(x, bgCanvas.height);
+        bgCtx.stroke();
+    }
+    for (let y = 0; y < bgCanvas.height; y += tileSize) {
+        bgCtx.beginPath();
+        bgCtx.moveTo(0, y);
+        bgCtx.lineTo(bgCanvas.width, y);
+        bgCtx.stroke();
     }
 
-    // 3. Road Markings (Faded)
+    // 3. Noise/Texture (Pixelated)
+    for (let i = 0; i < 20000; i++) {
+        const x = Math.floor(Math.random() * (bgCanvas.width / pixelSize)) * pixelSize;
+        const y = Math.floor(Math.random() * (bgCanvas.height / pixelSize)) * pixelSize;
+        bgCtx.fillStyle = Math.random() > 0.5 ? '#333' : '#252525';
+        bgCtx.fillRect(x, y, pixelSize, pixelSize);
+    }
+
+    // 4. Road Markings (Pixelated)
     bgCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    const laneWidth = 100;
     const dashHeight = 40;
     const gapHeight = 60;
     
     // Vertical Road
-    const centerX = bgCanvas.width / 2;
+    const centerX = Math.floor((bgCanvas.width / 2) / pixelSize) * pixelSize;
     for (let y = 0; y < bgCanvas.height; y += dashHeight + gapHeight) {
-        bgCtx.fillRect(centerX - 5, y, 10, dashHeight);
+        // Snap to pixel grid
+        const py = Math.floor(y / pixelSize) * pixelSize;
+        const ph = Math.floor(dashHeight / pixelSize) * pixelSize;
+        bgCtx.fillRect(centerX - pixelSize * 2, py, pixelSize * 4, ph);
     }
     
     // Horizontal Road
-    const centerY = bgCanvas.height / 2;
+    const centerY = Math.floor((bgCanvas.height / 2) / pixelSize) * pixelSize;
     for (let x = 0; x < bgCanvas.width; x += dashHeight + gapHeight) {
-        bgCtx.fillRect(x, centerY - 5, dashHeight, 10);
+        const px = Math.floor(x / pixelSize) * pixelSize;
+        const pw = Math.floor(dashHeight / pixelSize) * pixelSize;
+        bgCtx.fillRect(px, centerY - pixelSize * 2, pw, pixelSize * 4);
     }
 
-    // 4. Cracks
-    bgCtx.strokeStyle = '#111';
-    bgCtx.lineWidth = 2;
-    for (let i = 0; i < 100; i++) { // More cracks
-        bgCtx.beginPath();
-        let cx = Math.random() * bgCanvas.width;
-        let cy = Math.random() * bgCanvas.height;
-        bgCtx.moveTo(cx, cy);
-        for (let j = 0; j < 5; j++) {
-            cx += (Math.random() - 0.5) * 50;
-            cy += (Math.random() - 0.5) * 50;
-            bgCtx.lineTo(cx, cy);
+    // 5. Cracks (Pixelated Walk)
+    bgCtx.fillStyle = '#111';
+    for (let i = 0; i < 100; i++) {
+        let cx = Math.floor(Math.random() * (bgCanvas.width / pixelSize)) * pixelSize;
+        let cy = Math.floor(Math.random() * (bgCanvas.height / pixelSize)) * pixelSize;
+        
+        for (let j = 0; j < 20; j++) {
+            bgCtx.fillRect(cx, cy, pixelSize, pixelSize);
+            // Move in random direction
+            const dir = Math.floor(Math.random() * 4);
+            if (dir === 0) cx += pixelSize;
+            else if (dir === 1) cx -= pixelSize;
+            else if (dir === 2) cy += pixelSize;
+            else if (dir === 3) cy -= pixelSize;
         }
-        bgCtx.stroke();
     }
 
-    // 5. Rubble/Debris
-    for (let i = 0; i < 200; i++) { // More rubble
-        const rx = Math.random() * bgCanvas.width;
-        const ry = Math.random() * bgCanvas.height;
-        const rSize = Math.random() * 20 + 5;
+    // 6. Rubble/Debris (Pixelated Clusters)
+    for (let i = 0; i < 300; i++) {
+        let rx = Math.floor(Math.random() * (bgCanvas.width / pixelSize)) * pixelSize;
+        let ry = Math.floor(Math.random() * (bgCanvas.height / pixelSize)) * pixelSize;
         
         bgCtx.fillStyle = '#444';
-        bgCtx.beginPath();
-        bgCtx.arc(rx, ry, rSize, 0, Math.PI * 2);
-        bgCtx.fill();
+        // Draw a small cluster
+        bgCtx.fillRect(rx, ry, pixelSize, pixelSize);
+        bgCtx.fillRect(rx + pixelSize, ry, pixelSize, pixelSize);
+        bgCtx.fillRect(rx, ry + pixelSize, pixelSize, pixelSize);
         
         // Highlight
         bgCtx.fillStyle = '#555';
-        bgCtx.beginPath();
-        bgCtx.arc(rx - 2, ry - 2, rSize * 0.5, 0, Math.PI * 2);
-        bgCtx.fill();
+        bgCtx.fillRect(rx, ry, pixelSize, pixelSize);
+    }
+
+    // 7. Buildings (City Blocks Layout)
+    // Clear existing buildings
+    buildings.length = 0;
+
+    const roadWidth = 300; // Main roads width
+    const blockGridSize = 250; // Size of a city block
+    const buildingPadding = 20; // Space between buildings
+
+    const cx = world.width / 2;
+    const cy = world.height / 2;
+
+    // Iterate over the world grid
+    for (let x = 50; x < world.width - 50; x += blockGridSize) {
+        for (let y = 50; y < world.height - 50; y += blockGridSize) {
+            
+            // Calculate center of this potential block
+            const blockCenterX = x + blockGridSize / 2;
+            const blockCenterY = y + blockGridSize / 2;
+
+            // Check if this block overlaps with the main cross roads
+            // Horizontal Road check
+            if (Math.abs(blockCenterY - cy) < roadWidth / 2 + 50) continue;
+            // Vertical Road check
+            if (Math.abs(blockCenterX - cx) < roadWidth / 2 + 50) continue;
+
+            // 70% chance to spawn a building in this block (ruined city feel)
+            if (Math.random() < 0.7) {
+                // Randomize size slightly but keep within grid cell
+                const w = blockGridSize - buildingPadding - (Math.random() * 40);
+                const h = blockGridSize - buildingPadding - (Math.random() * 40);
+                
+                // Center the building in the grid cell
+                const bx = x + (blockGridSize - w) / 2;
+                const by = y + (blockGridSize - h) / 2;
+
+                // Store building for collision
+                const building = new Building(bx, by, w, h);
+                buildings.push(building);
+
+                // Draw building on background
+                building.draw(bgCtx);
+                
+                // Shadow (on bg)
+                bgCtx.fillStyle = 'rgba(0,0,0,0.5)';
+                bgCtx.fillRect(bx + 10, by + 10, w, h);
+            }
+        }
     }
 }
 
@@ -129,6 +208,15 @@ generateRuinedStreetBackground();
 // Spear Logic
 // Removed cooldown logic as spears are now permanent orbiting objects
 
+function spawnChests() {
+    // Spawn 20 random chests
+    for (let i = 0; i < 20; i++) {
+        const cx = Math.random() * world.width;
+        const cy = Math.random() * world.height;
+        chests.push(new Chest(cx, cy));
+    }
+}
+
 function init() {
     if (animationId) {
         cancelAnimationFrame(animationId);
@@ -137,6 +225,7 @@ function init() {
     projectiles = [];
     enemies = [];
     particles = [];
+    effects = [];
     expGems = [];
     items = [];
     sawblades = [];
@@ -144,7 +233,9 @@ function init() {
     bombs = [];
     damageNumbers = [];
     firePatches = [];
+    chests = [];
     pet = null;
+    drone = null;
     score = 0;
     level = 1;
     exp = 0;
@@ -157,6 +248,7 @@ function init() {
     bossSpawnCount = 0;
     
     generateRuinedStreetBackground(); // Generate BG on init
+    spawnChests();
 
     // Reset Upgrades
     upgradeLevels = {
@@ -168,8 +260,12 @@ function init() {
         spear: 0,
         pet: 0,
         shield: 0,
-        fireRain: 0
+        fireRain: 0,
+        crit: 0,
+        drone: 0
     };
+
+    player.critRate = 0; // Initialize crit rate
 
     scoreEl.innerHTML = score;
     levelEl.innerHTML = level;
@@ -284,7 +380,12 @@ function spawnBoss() {
     const baseHp = 1000;
     const health = baseHp + (baseHp * 0.3 * (bossSpawnCount - 1));
     
-    const boss = new Enemy(spawnX, spawnY, radius, color, velocity, health, 'boss', 20);
+    let bossType = 'boss'; // Default (Skull)
+    if (bossSpawnCount === 1) bossType = 'boss_spider'; // Level 10
+    else if (bossSpawnCount === 2) bossType = 'boss_mutant'; // Level 20
+    else bossType = Math.random() < 0.5 ? 'boss_spider' : 'boss_mutant'; // Random for later levels
+
+    const boss = new Enemy(spawnX, spawnY, radius, color, velocity, health, bossType, 20);
     boss.isBoss = true;
     enemies.push(boss);
     alert(`BOSS FIGHT STARTED! (HP: ${health})`);
@@ -385,6 +486,19 @@ function updateStats(type, value) {
         }
     } else if (type === 'fireRain') {
         // Just increment level, logic is in animate
+    } else if (type === 'crit') {
+        if (upgradeLevels.crit === 1) {
+            player.critRate += 0.08; // Base 8%
+        } else {
+            player.critRate += 0.03; // +3% per level
+        }
+        console.log("Crit Rate:", player.critRate);
+    } else if (type === 'drone') {
+        if (!drone) {
+            drone = new Drone(player);
+        } else {
+            drone.level++;
+        }
     }
 }
 
@@ -422,6 +536,11 @@ function animate(timestamp) {
         pet.update(player, timestamp, bombs, enemies);
     }
 
+    // Drone Logic
+    if (drone) {
+        drone.update(timestamp, enemies, projectiles);
+    }
+
     // Fire Rain Logic
     if (upgradeLevels.fireRain > 0) {
         // Cooldown 2s (can be adjusted or scaled with level)
@@ -437,12 +556,31 @@ function animate(timestamp) {
 
         if (timestamp - player.lastFireRainTime > fireRainCooldown) {
             // Spawn Fire Patch
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * 200;
-            const fx = player.x + Math.cos(angle) * dist;
-            const fy = player.y + Math.sin(angle) * dist;
+            let valid = false;
+            let fx, fy;
+            let attempts = 0;
             
-            firePatches.push(new FirePatch(fx, fy));
+            while (!valid && attempts < 10) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 200;
+                fx = player.x + Math.cos(angle) * dist;
+                fy = player.y + Math.sin(angle) * dist;
+                
+                let hit = false;
+                for (const b of buildings) {
+                    // Simple AABB check
+                    if (fx > b.x && fx < b.x + b.width && fy > b.y && fy < b.y + b.height) {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) valid = true;
+                attempts++;
+            }
+
+            if (valid) {
+                firePatches.push(new FirePatch(fx, fy));
+            }
             player.lastFireRainTime = timestamp;
         }
     }
@@ -452,6 +590,67 @@ function animate(timestamp) {
         const active = fp.update(timestamp, enemies, damageNumbers);
         if (!active) {
             firePatches.splice(index, 1);
+        }
+    });
+
+    // Chest Logic
+    chests.forEach((chest, index) => {
+        chest.draw();
+        
+        // Collision with player
+        const dist = Math.hypot(player.x - chest.x, player.y - chest.y);
+        if (dist < player.radius + chest.radius && !chest.opened) {
+            chest.opened = true;
+            
+            // Gacha Logic (New System)
+            // 1. Check for upgradable items
+            const upgradableItems = Object.keys(upgradeLevels).filter(key => upgradeLevels[key] > 0 && upgradeLevels[key] < MAX_LEVEL);
+            
+            const rand = Math.random();
+            let rewardText = "";
+            
+            // 40% Chance to Upgrade an existing item (if possible)
+            if (rand < 0.4 && upgradableItems.length > 0) {
+                const randomKey = upgradableItems[Math.floor(Math.random() * upgradableItems.length)];
+                // Apply upgrade
+                // For fireRate, we need to pass a value (e.g., 0.9)
+                // For others, value is ignored or handled
+                let val = 0;
+                if (randomKey === 'fireRate') val = 0.9;
+                
+                updateStats(randomKey, val);
+                rewardText = `Upgrade: ${randomKey.toUpperCase()}!`;
+            } else {
+                // 60% Chance (or fallback) for Consumables
+                // Split between Meat and Magnet
+                if (Math.random() < 0.5) {
+                    items.push(new Meat(chest.x, chest.y));
+                    rewardText = "Meat!";
+                } else {
+                    items.push(new Magnet(chest.x, chest.y));
+                    rewardText = "Magnet!";
+                }
+            }
+
+            // Show text
+            damageNumbers.push(new DamageNumber(chest.x, chest.y - 30, rewardText, true)); 
+            
+            // Remove chest
+            chests.splice(index, 1);
+            
+            // Particles
+            for (let i = 0; i < 20; i++) {
+                particles.push(new Particle(
+                    chest.x, 
+                    chest.y, 
+                    Math.random() * 3, 
+                    '#FFD700', 
+                    {
+                        x: (Math.random() - 0.5) * 5,
+                        y: (Math.random() - 0.5) * 5
+                    }
+                ));
+            }
         }
     });
 
@@ -525,6 +724,15 @@ function animate(timestamp) {
         }
     });
 
+    // Update Effects (Shot/Hit)
+    effects.forEach((effect, index) => {
+        if (effect.life <= 0) {
+            effects.splice(index, 1);
+        } else {
+            effect.update();
+        }
+    });
+
     damageNumbers.forEach((dn, index) => {
         if (dn.life <= 0) {
             damageNumbers.splice(index, 1);
@@ -588,6 +796,10 @@ function animate(timestamp) {
                 // Visual feedback for heal
                 damageNumbers.push(new DamageNumber(player.x, player.y - 20, item.healAmount, false)); // Reuse damage number for heal?
                 // Maybe add a green particle effect later
+            } else if (item.type === 'nightVision') {
+                nightVisionActive = true;
+                nightVisionEndTime = performance.now() + item.duration;
+                damageNumbers.push(new DamageNumber(player.x, player.y - 40, "Night Vision!", true));
             }
             items.splice(index, 1);
         }
@@ -649,6 +861,9 @@ function animate(timestamp) {
 
             // When projectiles touch enemy
             if (dist - enemy.radius - projectile.radius < 1) {
+                // Create Hit Effect
+                effects.push(new HitEffect(projectile.x, projectile.y, enemy.color));
+
                 // Create explosions
                 for (let i = 0; i < 8; i++) {
                     particles.push(new Particle(
@@ -664,14 +879,21 @@ function animate(timestamp) {
                 }
 
                 // Reduce health
-                let damage = playerDamage;
-                let isCrit = Math.random() < 0.2; // 20% chance
-                if (isCrit) {
-                    damage *= 1.5; // 150% damage
+                let damage = projectile.damage || playerDamage;
+                
+                // Crit logic (Only for player projectiles, or maybe drone too? Let's say drone doesn't crit for now or uses player crit rate?)
+                // Let's assume only player main weapon crits for now, or check if it's not drone
+                if (!projectile.isDrone) {
+                    let isCrit = Math.random() < player.critRate; 
+                    if (isCrit) {
+                        damage *= 1.5; // 150% damage
+                    }
+                    damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, isCrit));
+                } else {
+                    damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, false));
                 }
 
                 enemy.health -= damage;
-                damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, isCrit));
 
                 if (enemy.health <= 0) {
                     killEnemy(enemy, index);
@@ -689,6 +911,73 @@ function animate(timestamp) {
     });
 
     ctx.restore();
+
+    // Fog of War removed
+    if (nightVisionActive) {
+        // Check if expired
+        if (timestamp > nightVisionEndTime) {
+            nightVisionActive = false;
+        }
+    }
+
+    // Apply Shader Effects
+    drawShaderEffect();
+
+    // Random Chest Spawning (5% chance every second)
+    if (timestamp - lastChestSpawnTime > 1000) {
+        if (Math.random() < 0.05) {
+            spawnRandomChest();
+        }
+        lastChestSpawnTime = timestamp;
+    }
+}
+
+function spawnRandomChest() {
+    let valid = false;
+    let cx, cy;
+    let attempts = 0;
+    
+    // Try to find a valid position not inside a building
+    while (!valid && attempts < 10) {
+        cx = Math.random() * world.width;
+        cy = Math.random() * world.height;
+        
+        let hit = false;
+        for (const b of buildings) {
+            // Simple AABB check
+            if (cx > b.x && cx < b.x + b.width && cy > b.y && cy < b.y + b.height) {
+                hit = true;
+                break;
+            }
+        }
+        if (!hit) valid = true;
+        attempts++;
+    }
+    
+    if (valid) {
+        chests.push(new Chest(cx, cy));
+    }
+}
+
+function drawShaderEffect() {
+    // 1. Vignette (Dark corners)
+    const gradient = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height/2, canvas.width/2, canvas.height/2, canvas.height);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 2. Scanlines (CRT effect)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    for (let i = 0; i < canvas.height; i += 4) {
+        ctx.fillRect(0, i, canvas.width, 2);
+    }
+    
+    // 3. Color Tint (Atmosphere)
+    ctx.fillStyle = 'rgba(0, 10, 30, 0.1)';
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
 }
 
 function handleSpears(timestamp) {
@@ -769,8 +1058,11 @@ function autoAttack(timestamp) {
     enemies.forEach(enemy => {
         const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
         if (dist < minDist && dist <= attackRange) {
-            minDist = dist;
-            nearestEnemy = enemy;
+            // Check Line of Sight
+            if (hasLineOfSight(player, enemy)) {
+                minDist = dist;
+                nearestEnemy = enemy;
+            }
         }
     });
 
@@ -796,10 +1088,67 @@ function autoAttack(timestamp) {
                 y: Math.sin(angle) * 8
             };
             projectiles.push(new Projectile(player.x, player.y, 5, 'white', velocity));
+            
+            // Add Shot Effect (Muzzle Flash)
+            // Calculate muzzle position based on player rotation (angle)
+            // Gun offset is approx (44, 4) relative to center when facing right
+            // We use the shooting angle for rotation
+            const muzzleDist = 45;
+            const muzzleOffsetAngle = 0.1; // Slight offset for Y
+            const mx = player.x + Math.cos(angle + muzzleOffsetAngle) * muzzleDist;
+            const my = player.y + Math.sin(angle + muzzleOffsetAngle) * muzzleDist;
+            
+            effects.push(new ShotEffect(mx, my, angle));
         }
         
         lastFired = timestamp;
     }
+}
+
+// --- Line of Sight Helpers ---
+
+function hasLineOfSight(start, end) {
+    for (const building of buildings) {
+        if (checkLineRectCollision(start.x, start.y, end.x, end.y, building.x, building.y, building.width, building.height)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function checkLineRectCollision(x1, y1, x2, y2, rx, ry, rw, rh) {
+    // Check intersection with all 4 sides
+    // Top
+    if (getLineIntersection(x1, y1, x2, y2, rx, ry, rx + rw, ry)) return true;
+    // Bottom
+    if (getLineIntersection(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh)) return true;
+    // Left
+    if (getLineIntersection(x1, y1, x2, y2, rx, ry, rx, ry + rh)) return true;
+    // Right
+    if (getLineIntersection(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh)) return true;
+    
+    return false;
+}
+
+function getLineIntersection(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
+    let s1_x, s1_y, s2_x, s2_y;
+    s1_x = p1_x - p0_x;
+    s1_y = p1_y - p0_y;
+    s2_x = p3_x - p2_x;
+    s2_y = p3_y - p2_y;
+
+    let s, t;
+    let denom = -s2_x * s1_y + s1_x * s2_y;
+    
+    if (denom === 0) return false; // Collinear
+
+    s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / denom;
+    t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / denom;
+
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+        return true; // Collision detected
+    }
+    return false; // No collision
 }
 
 const keys = {
@@ -845,15 +1194,14 @@ function updatePlayerVelocity() {
         dy += joystickVector.y;
     }
 
-    // Normalize direction
+    // Normalize direction to ensure diagonal speed isn't faster
     const magnitude = Math.hypot(dx, dy);
     if (magnitude > 0) {
-        // Cap magnitude at 1 so we don't go faster than max speed
-        // If using keyboard diagonal (1.414), normalize to 1
-        const finalScale = magnitude > 1 ? 1 / magnitude : 1;
+        // Normalize vector to length 1 if it exceeds 1 (Diagonal = ~1.414 -> 1)
+        const scale = magnitude > 1 ? 1 / magnitude : 1;
         
-        player.velocity.x = dx * finalScale * player.speed;
-        player.velocity.y = dy * finalScale * player.speed;
+        player.velocity.x = dx * scale * player.speed;
+        player.velocity.y = dy * scale * player.speed;
     } else {
         player.velocity.x = 0;
         player.velocity.y = 0;
@@ -924,15 +1272,46 @@ const guideContent = {
                 <p>Effect: Blocks 1 hit completely. Recharges over time.</p>
             </div>
         </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="drone"></div>
+            <div class="guide-info">
+                <h3>Combat Drone</h3>
+                <p>Upgrade Item.</p>
+                <p>Effect: Shoots enemies. Active 2s, Cooldown 8s.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="crit"></div>
+            <div class="guide-info">
+                <h3>Critical Strike</h3>
+                <p>Upgrade Item.</p>
+                <p>Effect: Increases Critical Hit Chance.</p>
+            </div>
+        </div>
     `,
     bosses: `
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="boss_spider"></div>
+            <div class="guide-info">
+                <h3>Giant Spider (Lvl 10)</h3>
+                <p>First Boss Encounter.</p>
+                <p>HP: 1000. Fast and deadly.</p>
+            </div>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-container" data-icon="boss_mutant"></div>
+            <div class="guide-info">
+                <h3>Mutant Zombie (Lvl 20)</h3>
+                <p>Second Boss Encounter.</p>
+                <p>HP: 1300. Massive damage dealer.</p>
+            </div>
+        </div>
         <div class="guide-item">
             <div class="guide-icon-container" data-icon="boss"></div>
             <div class="guide-info">
                 <h3>Giant Skull</h3>
-                <p>Spawns every 10 levels.</p>
-                <p>HP: Scales with spawn count (1000 + 30%).</p>
-                <p>Behavior: Slow moving, massive damage.</p>
+                <p>Random Boss (Lvl 30+).</p>
+                <p>HP: Scales infinitely.</p>
             </div>
         </div>
     `,
@@ -952,7 +1331,7 @@ const guideContent = {
         <div class="guide-item">
             <div class="guide-info">
                 <h3>Critical Hits</h3>
-                <p>20% chance to deal 150% damage.</p>
+                <p>Chance to deal 150% damage. Upgrade to increase chance.</p>
             </div>
         </div>
     `

@@ -115,6 +115,49 @@ export class Meat {
     }
 }
 
+export class NightVision {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 15;
+        this.type = 'nightVision';
+        this.duration = 10000; // 10 seconds
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const scale = 1.5;
+        
+        // Goggles Frame
+        ctx.fillStyle = '#212121';
+        ctx.fillRect(-8 * scale, -3 * scale, 16 * scale, 6 * scale);
+        
+        // Lenses (Green)
+        ctx.fillStyle = '#00E676'; // Bright Green
+        ctx.beginPath();
+        ctx.arc(-4 * scale, 0, 2.5 * scale, 0, Math.PI * 2);
+        ctx.arc(4 * scale, 0, 2.5 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Strap
+        ctx.strokeStyle = '#424242';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-8 * scale, 0);
+        ctx.lineTo(-10 * scale, -2 * scale);
+        ctx.moveTo(8 * scale, 0);
+        ctx.lineTo(10 * scale, -2 * scale);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    update() {
+        this.draw();
+    }
+}
+
 export function drawIcon(ctx, type, width, height) {
     ctx.clearRect(0, 0, width, height);
     ctx.save();
@@ -240,6 +283,15 @@ export function drawIcon(ctx, type, width, height) {
         ctx.beginPath();
         ctx.ellipse(2, 0, 6, 4, 0, 0, Math.PI * 2);
         ctx.fill();
+    } else if (type === 'nightVision') {
+        // Night Vision Icon
+        ctx.fillStyle = '#212121';
+        ctx.fillRect(-8, -3, 16, 6);
+        ctx.fillStyle = '#00E676';
+        ctx.beginPath();
+        ctx.arc(-4, 0, 3, 0, Math.PI * 2);
+        ctx.arc(4, 0, 3, 0, Math.PI * 2);
+        ctx.fill();
     } else if (type === 'boss') {
         // Boss Skull Icon
         ctx.fillStyle = '#FFFFFF'; 
@@ -264,6 +316,51 @@ export function drawIcon(ctx, type, width, height) {
         ctx.arc(3, 8, 2, 0, Math.PI * 2);
         ctx.arc(0, 2, 2, 0, Math.PI * 2);
         ctx.fill();
+    } else if (type === 'crit') {
+        // Crit Icon (Crosshair or Lightning)
+        ctx.fillStyle = '#FF0000';
+        ctx.beginPath();
+        // Lightning bolt shape
+        ctx.moveTo(2, -10);
+        ctx.lineTo(-4, 0);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(-2, 10);
+        ctx.lineTo(4, 0);
+        ctx.lineTo(0, 0);
+        ctx.fill();
+        // Glow
+        ctx.strokeStyle = '#FFFF00';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    } else if (type === 'drone') {
+        // Drone Icon
+        ctx.fillStyle = '#00E5FF';
+        ctx.fillRect(-6, -2, 12, 4);
+        ctx.fillRect(-2, -6, 4, 12);
+        ctx.fillStyle = '#212121';
+        ctx.beginPath(); ctx.arc(-6, -6, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(6, -6, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(-6, 6, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(6, 6, 3, 0, Math.PI*2); ctx.fill();
+    } else if (type === 'boss_spider') {
+        // Spider Icon
+        ctx.fillStyle = '#212121';
+        ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill(); // Body
+        ctx.strokeStyle = '#212121'; ctx.lineWidth = 2;
+        // Legs
+        for(let i=0; i<8; i++) {
+            const angle = (i/8)*Math.PI*2;
+            ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(angle)*10, Math.sin(angle)*10); ctx.stroke();
+        }
+        // Red Mark
+        ctx.fillStyle = 'red'; ctx.fillRect(-2, -2, 4, 4);
+    } else if (type === 'boss_mutant') {
+        // Mutant Icon
+        ctx.fillStyle = '#689F38'; // Green Head
+        ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+        // Big Arm
+        ctx.fillStyle = '#33691E';
+        ctx.beginPath(); ctx.arc(8, 0, 5, 0, Math.PI*2); ctx.fill();
     }
 
     ctx.restore();
@@ -284,7 +381,9 @@ export function showUpgradeOptions(player, resumeCallback, updateStatsCallback, 
         { type: 'spear', title: 'Add Spear', desc: 'Orbiting spear (ATK: 10)' },
         { type: 'pet', title: 'Get Pet', desc: 'Drops bombs every 5-8s' },
         { type: 'shield', title: 'Energy Shield', desc: 'Blocks 1 hit. Cooldown: 60s' },
-        { type: 'fireRain', title: 'Fire Rain', desc: 'Random fire bombs (2-6 DMG)' }
+        { type: 'fireRain', title: 'Fire Rain', desc: 'Random fire bombs (2-6 DMG)' },
+        { type: 'crit', title: 'Critical Strike', desc: 'Increase Crit Chance (Base 8%, +3%/Lvl)' },
+        { type: 'drone', title: 'Combat Drone', desc: 'Shoots enemies. Active 2s. Cooldown 8s (-1s/Lvl)' }
     ];
 
     // Filter out maxed upgrades
@@ -368,6 +467,12 @@ function applyUpgrade(type, player, updateStatsCallback) {
             break;
         case 'fireRain':
             updateStatsCallback('fireRain', 1);
+            break;
+        case 'crit':
+            updateStatsCallback('crit', 1);
+            break;
+        case 'drone':
+            updateStatsCallback('drone', 1);
             break;
     }
 }

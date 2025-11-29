@@ -1,4 +1,218 @@
-import { ctx, canvas, world } from './Globals.js';
+import { ctx, canvas, world, buildings } from './Globals.js';
+
+// Helper for collision
+function checkCircleRectCollision(circle, rect) {
+    // Find closest point on rect to circle center
+    const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
+    const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
+
+    // Calculate distance
+    const dx = circle.x - closestX;
+    const dy = circle.y - closestY;
+    const distanceSquared = dx * dx + dy * dy;
+
+    return distanceSquared < (circle.radius * circle.radius);
+}
+
+// Helper to resolve collision (simple push back)
+function resolveCollision(entity, rect) {
+    // Find closest point on rect to entity center
+    const closestX = Math.max(rect.x, Math.min(entity.x, rect.x + rect.width));
+    const closestY = Math.max(rect.y, Math.min(entity.y, rect.y + rect.height));
+
+    const dx = entity.x - closestX;
+    const dy = entity.y - closestY;
+    
+    // If center is inside rect, push out to nearest edge
+    if (dx === 0 && dy === 0) {
+        // This is rare but possible if spawned inside. Push up.
+        entity.y = rect.y - entity.radius;
+        return;
+    }
+
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance < entity.radius) {
+        // Overlap amount
+        const overlap = entity.radius - distance;
+        
+        // Normalize vector
+        const nx = dx / distance;
+        const ny = dy / distance;
+        
+        // Push entity out
+        entity.x += nx * overlap;
+        entity.y += ny * overlap;
+    }
+}
+
+// --- Line Intersection Helpers for AI ---
+function checkLineRectCollision(x1, y1, x2, y2, rx, ry, rw, rh) {
+    // Check intersection with all 4 sides
+    if (getLineIntersection(x1, y1, x2, y2, rx, ry, rx + rw, ry)) return true; // Top
+    if (getLineIntersection(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh)) return true; // Bottom
+    if (getLineIntersection(x1, y1, x2, y2, rx, ry, rx, ry + rh)) return true; // Left
+    if (getLineIntersection(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh)) return true; // Right
+    return false;
+}
+
+function getLineIntersection(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
+    let s1_x, s1_y, s2_x, s2_y;
+    s1_x = p1_x - p0_x;
+    s1_y = p1_y - p0_y;
+    s2_x = p3_x - p2_x;
+    s2_y = p3_y - p2_y;
+
+    let s, t;
+    let denom = -s2_x * s1_y + s1_x * s2_y;
+    
+    if (denom === 0) return false; // Collinear
+
+    s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / denom;
+    t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / denom;
+
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+        return true; // Collision detected
+    }
+    return false; // No collision
+}
+
+export class ShotEffect {
+    constructor(x, y, angle) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.life = 3; // Very short life (3 frames)
+        this.maxLife = 3;
+    }
+
+    update() {
+        this.life--;
+        this.draw();
+    }
+
+    draw() {
+        if (this.life <= 0) return;
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        
+        const scale = 2; // Pixel scale
+        
+        // Pixel Muzzle Flash
+        ctx.fillStyle = '#FFFF00'; // Yellow
+        
+        // Core
+        ctx.fillRect(0, -2 * scale, 4 * scale, 4 * scale);
+        
+        // Spikes (Randomized slightly for flicker effect if we wanted, but static is fine for 3 frames)
+        ctx.fillRect(4 * scale, -4 * scale, 4 * scale, 2 * scale); // Top spike
+        ctx.fillRect(4 * scale, 2 * scale, 4 * scale, 2 * scale);  // Bottom spike
+        ctx.fillRect(4 * scale, -1 * scale, 6 * scale, 2 * scale); // Middle long spike
+        
+        // Outer particles
+        ctx.fillStyle = '#FFFFFF'; // White hot center
+        ctx.fillRect(0, -1 * scale, 3 * scale, 2 * scale);
+
+        ctx.restore();
+    }
+}
+
+export class HitEffect {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.life = 8;
+        this.radius = 2;
+    }
+
+    update() {
+        this.life--;
+        this.radius += 2; // Expand
+        this.draw();
+    }
+
+    draw() {
+        if (this.life <= 0) return;
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const scale = 2;
+        
+        // Pixel Explosion / Impact
+        // Draw a ring of pixels
+        ctx.fillStyle = 'white';
+        
+        // Calculate pixel positions for a rough circle/square ring
+        const r = Math.floor(this.radius);
+        
+        // Top/Bottom
+        ctx.fillRect(-r * scale, -r * scale, (r * 2) * scale, 2 * scale); // Top
+        ctx.fillRect(-r * scale, r * scale, (r * 2) * scale, 2 * scale);  // Bottom
+        // Left/Right
+        ctx.fillRect(-r * scale, -r * scale, 2 * scale, (r * 2) * scale); // Left
+        ctx.fillRect(r * scale, -r * scale, 2 * scale, (r * 2 + 2) * scale);  // Right
+        
+        // Inner debris
+        if (this.life > 4) {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-2 * scale, -2 * scale, 4 * scale, 4 * scale);
+        }
+        
+        ctx.restore();
+    }
+}
+
+export class Building {
+    constructor(x, y, width, height) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.details = [];
+        this.generateDetails();
+    }
+
+    generateDetails() {
+        const pixelSize = 4;
+        const numDetails = Math.floor(Math.random() * 5) + 1;
+        for (let j = 0; j < numDetails; j++) {
+            const dw = (Math.floor(Math.random() * 5) + 2) * pixelSize * 2;
+            const dh = (Math.floor(Math.random() * 5) + 2) * pixelSize * 2;
+            const dx = this.x + Math.random() * (this.width - dw);
+            const dy = this.y + Math.random() * (this.height - dh);
+            this.details.push({ x: dx, y: dy, w: dw, h: dh });
+        }
+    }
+
+    draw(ctx) {
+        const pixelSize = 4;
+        
+        // Shadow (Optional, usually drawn on BG, but if we redraw on top, we might skip shadow or draw it)
+        // Let's skip shadow here to avoid double shadow on top of fog
+        
+        // Rooftop Base
+        ctx.fillStyle = '#3E2723'; // Dark Brown
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // Rooftop Border
+        ctx.strokeStyle = '#5D4037';
+        ctx.lineWidth = pixelSize;
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
+
+        // Rooftop Details
+        this.details.forEach(d => {
+            ctx.fillStyle = '#616161'; // Grey
+            ctx.fillRect(d.x, d.y, d.w, d.h);
+            
+            // Fan
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(d.x + pixelSize, d.y + pixelSize, d.w - pixelSize*2, d.h - pixelSize*2);
+        });
+    }
+}
 
 export class Player {
     constructor(x, y, radius, color) {
@@ -24,126 +238,63 @@ export class Player {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        // Flip sprite based on movement direction
-        if (this.velocity.x < 0) {
-            ctx.scale(-1, 1);
+        // Rotate towards movement direction
+        if (this.velocity.x !== 0 || this.velocity.y !== 0) {
+            const angle = Math.atan2(this.velocity.y, this.velocity.x);
+            ctx.rotate(angle);
         }
 
-        const scale = 0.4; // Even smaller scale for maximum detail
+        const scale = 0.8; 
 
-        // --- Hyper Detailed Pixel Soldier ---
+        // --- Top-Down Soldier (Facing Right) ---
         
-        // Helper for drawing rects
-        const drawRect = (color, x, y, w, h) => {
-            ctx.fillStyle = color;
-            ctx.fillRect(x * scale, y * scale, w * scale, h * scale);
-        };
-
-        // 1. Legs & Boots
-        // Back Leg
-        drawRect('#1a1a1a', -10, 40, 14, 40); // Base
-        drawRect('#0d0d0d', -10, 40, 4, 40); // Shadow
-        // Front Leg
-        drawRect('#2F2F2F', 10, 40, 14, 30); // Base
-        drawRect('#1c1c1c', 10, 40, 4, 30); // Shadow
-        // Camo spots on legs
-        drawRect('#3E3E3E', 14, 50, 4, 4);
-        drawRect('#3E3E3E', 18, 60, 3, 3);
-
-        // Boots
-        drawRect('#000000', -12, 75, 18, 10); // Back boot
-        drawRect('#111111', -12, 75, 18, 3); // Highlight
-        drawRect('#000000', 8, 65, 18, 10); // Front boot
-        drawRect('#111111', 8, 65, 18, 3); // Highlight
-
-        // 2. Torso & Vest
-        // Undersuit
-        drawRect('#263238', -20, 0, 40, 45);
-        // Shading under arms
-        drawRect('#101518', -18, 10, 4, 20);
+        // Feet (Simple animation)
+        const walkCycle = Math.sin(performance.now() / 100) * 5;
         
-        // Tactical Vest (Plate Carrier)
-        drawRect('#1A237E', -22, 5, 44, 35); // Main body
-        drawRect('#0D1245', -22, 35, 44, 5); // Bottom shadow
-        drawRect('#283593', -20, 5, 40, 5); // Top highlight
-        
-        // Pouches (Ammo/Utility)
-        // Pouch 1
-        drawRect('#5D4037', -18, 25, 10, 12);
-        drawRect('#3E2723', -18, 35, 10, 2); // Shadow
-        drawRect('#8D6E63', -16, 27, 6, 6); // Flap
-        // Pouch 2
-        drawRect('#5D4037', -4, 25, 10, 12);
-        drawRect('#3E2723', -4, 35, 10, 2);
-        drawRect('#8D6E63', -2, 27, 6, 6);
-        // Pouch 3
-        drawRect('#5D4037', 10, 25, 10, 12);
-        drawRect('#3E2723', 10, 35, 10, 2);
-        drawRect('#8D6E63', 12, 27, 6, 6);
+        ctx.fillStyle = '#111'; // Boots
+        ctx.fillRect((-10 + walkCycle) * scale, -15 * scale, 14 * scale, 8 * scale); // Left Foot (Top)
+        ctx.fillRect((-10 - walkCycle) * scale, 7 * scale, 14 * scale, 8 * scale); // Right Foot (Bottom)
 
-        // Chest Rig / Radio
-        drawRect('#000000', 8, 8, 8, 10);
-        drawRect('#333333', 10, 10, 4, 4); // Screen/Button
-
-        // 3. Head
-        // Balaclava
-        drawRect('#111', -15, -10, 30, 15);
-        drawRect('#222', -12, -8, 5, 10); // Ear protection highlight
+        // Body (Shoulders/Vest)
+        ctx.fillStyle = '#1A237E'; // Blue Vest
+        ctx.fillRect(-15 * scale, -15 * scale, 30 * scale, 30 * scale); // Main body
         
-        // Helmet
-        drawRect('#33691E', -22, -35, 44, 25); // Dome
-        drawRect('#558B2F', -18, -33, 10, 5); // Highlight
-        drawRect('#1B5E20', -22, -15, 44, 5); // Rim shadow
-        drawRect('#2E5215', -24, -15, 48, 8); // Brim/Accessories rail
-        
-        // Goggles
-        drawRect('#FF6D00', -2, -22, 22, 10); // Lens
-        drawRect('#FF9E80', 2, -20, 8, 4); // Reflection
-        drawRect('#E65100', -2, -22, 22, 2); // Frame top
-        drawRect('#E65100', -2, -14, 22, 2); // Frame bottom
+        // Backpack
+        ctx.fillStyle = '#3E2723'; // Brown
+        ctx.fillRect(-20 * scale, -12 * scale, 8 * scale, 24 * scale);
 
-        // 4. Arms & Weapon
-        // Back Arm
-        drawRect('#263238', -30, 10, 15, 25);
-        drawRect('#101518', -30, 30, 15, 5); // Shadow
+        // Head (Helmet)
+        ctx.fillStyle = '#33691E'; // Green Helmet
+        ctx.beginPath();
+        ctx.arc(0, 0, 12 * scale, 0, Math.PI * 2);
+        ctx.fill();
         
-        // Weapon: Modern Assault Rifle
-        // Stock
-        drawRect('#3E2723', -15, 15, 20, 15);
-        drawRect('#5D4037', -12, 18, 10, 8); // Detail
-        // Receiver
-        drawRect('#424242', 5, 15, 40, 15);
-        drawRect('#616161', 10, 18, 25, 5); // Detail line
-        // Pistol Grip
-        drawRect('#3E2723', 5, 30, 10, 12);
-        // Magazine
-        drawRect('#212121', 20, 30, 12, 20);
-        drawRect('#424242', 22, 32, 2, 16); // Ribbing
-        // Handguard
-        drawRect('#212121', 45, 20, 25, 8);
-        drawRect('#424242', 48, 22, 20, 2); // Rails
-        // Barrel
-        drawRect('#111', 70, 22, 15, 4);
-        // Muzzle Brake
-        drawRect('#000', 85, 20, 6, 8);
-        // Optic/Scope
-        drawRect('#000', 15, 8, 20, 7);
-        drawRect('#333', 15, 10, 5, 3); // Lens cap
-        drawRect('#F44336', 34, 10, 1, 3); // Red dot lens
+        // Helmet details (Camo)
+        ctx.fillStyle = '#1B5E20';
+        ctx.beginPath();
+        ctx.arc(-2 * scale, -2 * scale, 6 * scale, 0, Math.PI * 2);
+        ctx.fill();
 
-        // Front Arm
-        drawRect('#263238', 10, 25, 30, 12); // Sleeve
-        drawRect('#101518', 10, 35, 30, 2); // Shadow
-        // Glove
-        drawRect('#3E2723', 35, 25, 12, 12);
-        drawRect('#5D4037', 38, 25, 8, 4); // Knuckle guard
+        // Arms & Gun
+        // Hands holding gun
+        ctx.fillStyle = '#3E2723'; // Gloves
+        ctx.fillRect(10 * scale, 8 * scale, 10 * scale, 8 * scale); // Right hand (Trigger)
+        ctx.fillRect(25 * scale, -2 * scale, 8 * scale, 8 * scale); // Left hand (Barrel)
+
+        // Gun (Rifle)
+        ctx.fillStyle = '#212121'; // Gun Metal
+        ctx.fillRect(15 * scale, 2 * scale, 40 * scale, 6 * scale); // Barrel/Body
+        ctx.fillStyle = '#3E2723'; // Wood Stock
+        ctx.fillRect(0 * scale, 2 * scale, 15 * scale, 6 * scale); 
+        ctx.fillStyle = '#000'; // Mag
+        ctx.fillRect(25 * scale, 8 * scale, 6 * scale, 10 * scale);
 
         ctx.restore();
         
         // Health bar above player
         const barWidth = 40;
         const barHeight = 5;
-        const yOffset = 40; // Adjusted for taller soldier
+        const yOffset = 40; 
         
         ctx.fillStyle = 'red';
         ctx.fillRect(this.x - barWidth / 2, this.y - yOffset, barWidth, barHeight);
@@ -164,24 +315,21 @@ export class Player {
         // Draw Shield (Pixel Art Style)
         if (this.shield.active) {
             ctx.save();
-            ctx.translate(this.x, this.y); // Translate to player position
+            ctx.translate(this.x, this.y); 
             const shieldRadius = this.radius + 12;
             const pixelSize = 4;
-            const numSegments = 12; // Number of pixel blocks
+            const numSegments = 12; 
             const angleStep = (Math.PI * 2) / numSegments;
             
-            // Rotate the whole shield slowly
             const rotation = performance.now() / 500; 
             
-            ctx.fillStyle = '#00E5FF'; // Cyan Neon
+            ctx.fillStyle = '#00E5FF'; 
             
-            // Outer Ring
             for(let i=0; i<numSegments; i++) {
                 const angle = i * angleStep + rotation;
                 const sx = Math.cos(angle) * shieldRadius;
                 const sy = Math.sin(angle) * shieldRadius;
                 
-                // Draw pixel block
                 ctx.fillRect(sx - pixelSize/2, sy - pixelSize/2, pixelSize, pixelSize);
             }
             
@@ -200,8 +348,20 @@ export class Player {
 
     update(timestamp) {
         this.draw();
+        
+        // Store previous position
+        const prevX = this.x;
+        const prevY = this.y;
+
         this.x += this.velocity.x;
         this.y += this.velocity.y;
+
+        // Building Collision
+        buildings.forEach(building => {
+            if (checkCircleRectCollision(this, building)) {
+                resolveCollision(this, building);
+            }
+        });
 
         // Boundary checks
         if (this.x - this.radius < 0) this.x = this.radius;
@@ -284,94 +444,174 @@ export class Enemy {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        // Flip sprite based on movement direction
-        if (this.velocity.x < 0) {
-            ctx.scale(-1, 1);
+        // Rotate towards movement direction
+        if (this.velocity.x !== 0 || this.velocity.y !== 0) {
+            const angle = Math.atan2(this.velocity.y, this.velocity.x);
+            ctx.rotate(angle);
         }
 
         if (this.type === 'boss') {
-            // Draw Pixel Art Skull for Boss
-            const scale = 4; 
+            // Giant Skull Top Down
+            const scale = 5; 
             ctx.fillStyle = '#FFFFFF'; 
-            ctx.fillRect(-6 * scale, -8 * scale, 12 * scale, 10 * scale);
-            ctx.fillRect(-4 * scale, 2 * scale, 8 * scale, 4 * scale);
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(-4 * scale, -4 * scale, 3 * scale, 3 * scale);
-            ctx.fillRect(1 * scale, -4 * scale, 3 * scale, 3 * scale);
-            ctx.fillRect(-1 * scale, 0, 2 * scale, 2 * scale);
-            ctx.fillRect(-3 * scale, 4 * scale, 1 * scale, 2 * scale);
-            ctx.fillRect(-1 * scale, 4 * scale, 1 * scale, 2 * scale);
-            ctx.fillRect(1 * scale, 4 * scale, 1 * scale, 2 * scale);
+            // Skull Main
+            ctx.beginPath();
+            ctx.arc(-2 * scale, 0, 8 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            // Jaw
+            ctx.fillRect(2 * scale, -6 * scale, 8 * scale, 12 * scale);
+            // Eyes
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(2 * scale, -3 * scale, 2 * scale, 0, Math.PI * 2);
+            ctx.arc(2 * scale, 3 * scale, 2 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+        } else if (this.type === 'boss_spider') {
+            // Giant Spider Top Down
+            const scale = 4;
+            ctx.fillStyle = '#212121'; // Black Body
+            
+            // Legs (8)
+            ctx.strokeStyle = '#212121';
+            ctx.lineWidth = 2 * scale;
+            for(let i=0; i<8; i++) {
+                const legAngle = (i / 8) * Math.PI * 2;
+                const lx = Math.cos(legAngle) * 12 * scale;
+                const ly = Math.sin(legAngle) * 12 * scale;
+                
+                // Jointed leg look
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(lx, ly);
+                ctx.lineTo(lx + Math.cos(legAngle + 0.5) * 8 * scale, ly + Math.sin(legAngle + 0.5) * 8 * scale);
+                ctx.stroke();
+            }
+
+            // Abdomen (Rear)
+            ctx.beginPath();
+            ctx.ellipse(-5 * scale, 0, 8 * scale, 6 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Red hourglass/mark
+            ctx.fillStyle = '#D50000';
+            ctx.beginPath();
+            ctx.moveTo(-6 * scale, -2 * scale);
+            ctx.lineTo(-4 * scale, 0);
+            ctx.lineTo(-6 * scale, 2 * scale);
+            ctx.lineTo(-8 * scale, 0);
+            ctx.fill();
+
+            // Cephalothorax (Head/Thorax)
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.arc(4 * scale, 0, 5 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eyes (Many)
+            ctx.fillStyle = 'red';
+            ctx.beginPath(); ctx.arc(6 * scale, -2 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(6 * scale, 2 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(7 * scale, -1 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(7 * scale, 1 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
+
+        } else if (this.type === 'boss_mutant') {
+            // Mutant Zombie Top Down
+            const scale = 4;
+            
+            // Left Arm (Normal)
+            ctx.fillStyle = '#689F38'; // Green
+            ctx.fillRect(4 * scale, -8 * scale, 4 * scale, 12 * scale);
+            
+            // Right Arm (Mutated Giant)
+            ctx.fillStyle = '#33691E'; // Dark Green
+            ctx.beginPath();
+            ctx.ellipse(4 * scale, 8 * scale, 8 * scale, 5 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Claws/Fist
+            ctx.fillStyle = '#1B5E20';
+            ctx.beginPath();
+            ctx.arc(10 * scale, 8 * scale, 4 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Body
+            ctx.fillStyle = '#424242'; // Tattered Grey Shirt
+            ctx.fillRect(-8 * scale, -8 * scale, 16 * scale, 16 * scale);
+            
+            // Head
+            ctx.fillStyle = '#689F38';
+            ctx.beginPath();
+            ctx.arc(0, 0, 6 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pustules/Veins
+            ctx.fillStyle = '#76FF03'; // Toxic Green
+            ctx.beginPath(); ctx.arc(-2 * scale, -2 * scale, 1.5 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(2 * scale, 3 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
 
         } else if (this.type === 'small') {
-            // Baby Zombie Pixel
-            const scale = 2;
-            // Head (Disproportionately large)
-            ctx.fillStyle = '#8BC34A'; // Light Green
-            ctx.fillRect(-3 * scale, -5 * scale, 6 * scale, 5 * scale);
-            // Eyes
-            ctx.fillStyle = 'black';
-            ctx.fillRect(-2 * scale, -3 * scale, 1 * scale, 1 * scale);
-            ctx.fillRect(1 * scale, -3 * scale, 1 * scale, 1 * scale);
-            // Body
+            // Baby Zombie Top Down
+            const scale = 0.8; 
+            
+            // Arms (Reaching forward)
+            ctx.fillStyle = '#8BC34A'; // Green Skin
+            ctx.fillRect(5 * scale, -12 * scale, 15 * scale, 6 * scale); // Left Arm
+            ctx.fillRect(5 * scale, 6 * scale, 15 * scale, 6 * scale); // Right Arm
+
+            // Shoulders/Body
             ctx.fillStyle = '#0288D1'; // Blue Shirt
-            ctx.fillRect(-2 * scale, 0, 4 * scale, 3 * scale);
-            // Arms (Outstretched)
-            ctx.fillStyle = '#8BC34A';
-            ctx.fillRect(2 * scale, 0, 3 * scale, 1 * scale); 
-            // Legs
-            ctx.fillStyle = '#303F9F'; // Dark Blue Pants
-            ctx.fillRect(-2 * scale, 3 * scale, 1.5 * scale, 2 * scale);
-            ctx.fillRect(0.5 * scale, 3 * scale, 1.5 * scale, 2 * scale);
+            ctx.fillRect(-10 * scale, -10 * scale, 20 * scale, 20 * scale);
+
+            // Head
+            ctx.fillStyle = '#8BC34A'; // Green
+            ctx.beginPath();
+            ctx.arc(0, 0, 8 * scale, 0, Math.PI * 2);
+            ctx.fill();
 
         } else if (this.type === 'elite') {
-            // Zombie Pixel
-            const scale = 2.5;
-            // Head
-            ctx.fillStyle = '#4CAF50'; // Green
-            ctx.fillRect(-2.5 * scale, -4 * scale, 5 * scale, 4 * scale);
-            // Eyes
-            ctx.fillStyle = 'black';
-            ctx.fillRect(-1.5 * scale, -2.5 * scale, 1 * scale, 1 * scale);
-            ctx.fillRect(1.5 * scale, -2.5 * scale, 1 * scale, 1 * scale);
+            // Zombie Top Down
+            const scale = 1.0;
+            
+            // Arms
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(5 * scale, -14 * scale, 18 * scale, 7 * scale);
+            ctx.fillRect(5 * scale, 7 * scale, 18 * scale, 7 * scale);
+
             // Body
             ctx.fillStyle = '#5D4037'; // Brown Shirt
-            ctx.fillRect(-3 * scale, 0, 6 * scale, 5 * scale);
-            // Arms (Outstretched)
+            ctx.fillRect(-12 * scale, -12 * scale, 24 * scale, 24 * scale);
+
+            // Head
             ctx.fillStyle = '#4CAF50';
-            ctx.fillRect(3 * scale, 0, 4 * scale, 1.5 * scale); 
-            // Legs
-            ctx.fillStyle = '#1A237E'; // Blue Pants
-            ctx.fillRect(-2.5 * scale, 5 * scale, 2 * scale, 4 * scale);
-            ctx.fillRect(0.5 * scale, 5 * scale, 2 * scale, 4 * scale);
+            ctx.beginPath();
+            ctx.arc(0, 0, 10 * scale, 0, Math.PI * 2);
+            ctx.fill();
 
         } else if (this.type === 'big') {
-            // Armored Zombie Pixel
-            const scale = 3;
-            // Helmet
-            ctx.fillStyle = '#616161'; // Dark Grey Helmet
-            ctx.fillRect(-3 * scale, -5 * scale, 6 * scale, 3 * scale);
-            // Face (Visible part)
-            ctx.fillStyle = '#2E7D32'; // Dark Green
-            ctx.fillRect(-2.5 * scale, -2 * scale, 5 * scale, 2 * scale);
-            // Eyes (Red glowing)
-            ctx.fillStyle = '#D32F2F';
-            ctx.fillRect(-1.5 * scale, -1.5 * scale, 1 * scale, 1 * scale);
-            ctx.fillRect(1.5 * scale, -1.5 * scale, 1 * scale, 1 * scale);
-            // Chestplate
-            ctx.fillStyle = '#9E9E9E'; // Grey Armor
-            ctx.fillRect(-4 * scale, 0, 8 * scale, 6 * scale);
-            // Shoulders
-            ctx.fillStyle = '#757575';
-            ctx.fillRect(-5 * scale, -1 * scale, 2 * scale, 3 * scale); // Left
-            ctx.fillRect(3 * scale, -1 * scale, 2 * scale, 3 * scale); // Right
-            // Arms
-            ctx.fillStyle = '#2E7D32';
-            ctx.fillRect(4 * scale, 1 * scale, 4 * scale, 2 * scale);
-            // Legs (Greaves)
+            // Armored Zombie Top Down
+            const scale = 1.2;
+            
+            // Arms (Armored)
+            ctx.fillStyle = '#2E7D32'; // Green Skin
+            ctx.fillRect(5 * scale, -16 * scale, 20 * scale, 8 * scale);
+            ctx.fillRect(5 * scale, 8 * scale, 20 * scale, 8 * scale);
+            // Pauldrons
+            ctx.fillStyle = '#757575'; // Grey Armor
+            ctx.fillRect(-5 * scale, -18 * scale, 12 * scale, 10 * scale);
+            ctx.fillRect(-5 * scale, 8 * scale, 12 * scale, 10 * scale);
+
+            // Body (Chestplate)
+            ctx.fillStyle = '#9E9E9E';
+            ctx.fillRect(-15 * scale, -15 * scale, 30 * scale, 30 * scale);
+
+            // Head (Helmet)
             ctx.fillStyle = '#616161';
-            ctx.fillRect(-3 * scale, 6 * scale, 2.5 * scale, 5 * scale);
-            ctx.fillRect(0.5 * scale, 6 * scale, 2.5 * scale, 5 * scale);
+            ctx.beginPath();
+            ctx.arc(0, 0, 12 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            // Red Eyes glow
+            ctx.fillStyle = '#D32F2F';
+            ctx.fillRect(8 * scale, -4 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(8 * scale, 2 * scale, 2 * scale, 2 * scale);
 
         } else {
             // Fallback
@@ -392,14 +632,71 @@ export class Enemy {
 
     update(player) {
         this.draw();
-        // Move towards player
-        const angle = Math.atan2(player.y - this.y, player.x - this.x);
-        this.velocity = {
-            x: Math.cos(angle) * 0.2,
-            y: Math.sin(angle) * 0.2
-        };
+        
+        // --- Context Steering (Obstacle Avoidance) ---
+        const numRays = 8;
+        const lookAhead = 80; // Distance to check for obstacles
+        let bestDir = { x: 0, y: 0 };
+        let maxScore = -Infinity;
+        
+        const angleToPlayer = Math.atan2(player.y - this.y, player.x - this.x);
+        
+        // Check 8 directions
+        for (let i = 0; i < numRays; i++) {
+            const angle = (i / numRays) * Math.PI * 2;
+            const dirX = Math.cos(angle);
+            const dirY = Math.sin(angle);
+            
+            // 1. Interest: Alignment with player direction
+            // Dot product logic: cos(angle - angleToPlayer) gives 1.0 if aligned, -1.0 if opposite
+            let score = Math.cos(angle - angleToPlayer);
+            
+            // 2. Danger: Check collision with buildings
+            const endX = this.x + dirX * lookAhead;
+            const endY = this.y + dirY * lookAhead;
+            
+            let hit = false;
+            // Optimization: Only check nearby buildings
+            for (const building of buildings) {
+                // Simple bounding box check first
+                if (Math.abs(building.x + building.width/2 - this.x) > 200 || 
+                    Math.abs(building.y + building.height/2 - this.y) > 200) continue;
+                
+                if (checkLineRectCollision(this.x, this.y, endX, endY, building.x, building.y, building.width, building.height)) {
+                    hit = true;
+                    break;
+                }
+            }
+            
+            if (hit) {
+                score -= 5.0; // Heavy penalty for blocked directions
+            }
+            
+            if (score > maxScore) {
+                maxScore = score;
+                bestDir = { x: dirX, y: dirY };
+            }
+        }
+        
+        // Apply velocity based on best direction
+        // Base speed
+        let speed = 0.8; // Default speed
+        if (this.type === 'boss') speed = 0.6;
+        if (this.type === 'small') speed = 1.0;
+        if (this.type === 'big') speed = 0.5;
+
+        this.velocity.x = bestDir.x * speed;
+        this.velocity.y = bestDir.y * speed;
+
         this.x += this.velocity.x;
         this.y += this.velocity.y;
+
+        // Building Collision (Hard resolve)
+        buildings.forEach(building => {
+            if (checkCircleRectCollision(this, building)) {
+                resolveCollision(this, building);
+            }
+        });
     }
 }
 
@@ -703,7 +1000,7 @@ export class DamageNumber {
         ctx.lineWidth = this.isCrit ? 3 : 2;
         ctx.textAlign = 'center';
         
-        const text = Math.floor(this.damage);
+        const text = typeof this.damage === 'number' ? Math.floor(this.damage) : this.damage;
         ctx.strokeText(text, this.x, this.y);
         ctx.fillText(text, this.x, this.y);
         
@@ -752,22 +1049,202 @@ export class FirePatch {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        // Flickering fire effect
-        const flicker = Math.random() * 0.2 + 0.8;
-        const scale = flicker;
+        const pixelSize = 5;
+        const gridRadius = Math.floor(this.radius / pixelSize);
 
-        ctx.globalAlpha = 0.7;
-        ctx.fillStyle = '#FF5722'; // Deep Orange
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * scale, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#FFEB3B'; // Yellow center
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * 0.6 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        for (let py = -gridRadius; py <= gridRadius; py++) {
+            for (let px = -gridRadius; px <= gridRadius; px++) {
+                // Circular mask
+                if (px*px + py*py <= gridRadius*gridRadius) {
+                    // Animate: Only draw some pixels each frame to flicker
+                    if (Math.random() > 0.3) {
+                        const dist = Math.sqrt(px*px + py*py);
+                        const normDist = dist / gridRadius;
+                        
+                        // Colors: White/Yellow (Center) -> Orange -> Red (Edge)
+                        if (normDist < 0.3) ctx.fillStyle = '#FFF176'; // Light Yellow
+                        else if (normDist < 0.6) ctx.fillStyle = '#FF9800'; // Orange
+                        else ctx.fillStyle = '#D84315'; // Burnt Orange/Red
+                        
+                        // Draw pixel
+                        ctx.globalAlpha = Math.random() * 0.5 + 0.5;
+                        ctx.fillRect(px * pixelSize, py * pixelSize, pixelSize, pixelSize);
+                    }
+                    
+                    // Occasional rising smoke/ember
+                    if (Math.random() < 0.02) {
+                        ctx.fillStyle = '#212121'; // Dark Grey Smoke
+                        ctx.globalAlpha = 0.6;
+                        ctx.fillRect(px * pixelSize, py * pixelSize - 10 - Math.random() * 15, pixelSize, pixelSize);
+                    }
+                }
+            }
+        }
 
         ctx.restore();
     }
 }
 
+export class Chest {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 32;
+        this.height = 32;
+        this.radius = 20; // For collision
+        this.opened = false;
+    }
+
+    draw() {
+        if (this.opened) return;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const scale = 2;
+
+        // Pixel Chest
+        // Body (Brown)
+        ctx.fillStyle = '#795548';
+        ctx.fillRect(-8 * scale, -6 * scale, 16 * scale, 12 * scale);
+        
+        // Lid/Trim (Dark Brown)
+        ctx.fillStyle = '#3E2723';
+        ctx.fillRect(-8 * scale, -6 * scale, 16 * scale, 2 * scale); // Top rim
+        ctx.fillRect(-8 * scale, 4 * scale, 16 * scale, 2 * scale); // Bottom rim
+        ctx.fillRect(-8 * scale, -6 * scale, 2 * scale, 12 * scale); // Left rim
+        ctx.fillRect(6 * scale, -6 * scale, 2 * scale, 12 * scale); // Right rim
+
+        // Lock (Gold)
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(-2 * scale, -1 * scale, 4 * scale, 4 * scale);
+
+        ctx.restore();
+    }
+}
+
+export class Drone {
+    constructor(player) {
+        this.player = player;
+        this.x = player.x;
+        this.y = player.y;
+        this.level = 1;
+        this.baseDamage = 1.5;
+        this.damagePerLevel = 0.3;
+        this.baseCooldown = 8000; // 8 seconds
+        this.cooldownReductionPerLevel = 1000; // 1 second
+        this.duration = 2000; // 2 seconds active
+        
+        this.state = 'COOLDOWN'; 
+        this.timer = performance.now(); 
+        this.lastFired = 0;
+        this.fireRate = 100; // Shoot every 100ms when active
+        
+        this.orbitAngle = 0;
+        this.orbitRadius = 50;
+    }
+
+    get damage() {
+        return this.baseDamage + (this.level - 1) * this.damagePerLevel;
+    }
+
+    get cooldown() {
+        return Math.max(1000, this.baseCooldown - (this.level - 1) * this.cooldownReductionPerLevel);
+    }
+
+    update(timestamp, enemies, projectiles) {
+        // Orbit player
+        this.orbitAngle += 0.05;
+        this.x = this.player.x + Math.cos(this.orbitAngle) * this.orbitRadius;
+        this.y = this.player.y + Math.sin(this.orbitAngle) * this.orbitRadius;
+
+        // State Machine
+        if (this.state === 'ACTIVE') {
+            if (timestamp - this.timer > this.duration) {
+                this.state = 'COOLDOWN';
+                this.timer = timestamp;
+            } else {
+                // Shooting Logic
+                if (timestamp - this.lastFired > this.fireRate) {
+                    this.shoot(enemies, projectiles);
+                    this.lastFired = timestamp;
+                }
+            }
+        } else if (this.state === 'COOLDOWN') {
+            if (timestamp - this.timer > this.cooldown) {
+                this.state = 'ACTIVE';
+                this.timer = timestamp;
+            }
+        }
+
+        this.draw();
+    }
+
+    shoot(enemies, projectiles) {
+        // Find nearest enemy
+        let target = null;
+        let minDist = 400; // Range
+
+        enemies.forEach(enemy => {
+            const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+            if (dist < minDist) {
+                minDist = dist;
+                target = enemy;
+            }
+        });
+
+        if (target) {
+            const angle = Math.atan2(target.y - this.y, target.x - this.x);
+            const velocity = {
+                x: Math.cos(angle) * 10, // Fast projectile
+                y: Math.sin(angle) * 10
+            };
+            
+            const proj = new Projectile(this.x, this.y, 3, '#00E5FF', velocity);
+            proj.damage = this.damage; // Attach specific damage
+            proj.isDrone = true; // Flag
+            projectiles.push(proj);
+        }
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        // Bobbing effect
+        const bob = Math.sin(performance.now() / 200) * 5;
+        ctx.translate(0, bob);
+
+        const scale = 1.5;
+
+        // Drone Body
+        ctx.fillStyle = this.state === 'ACTIVE' ? '#00E5FF' : '#607D8B'; // Bright Cyan if active, Grey if cooldown
+        
+        // Quadcopter shape
+        ctx.fillRect(-6 * scale, -2 * scale, 12 * scale, 4 * scale); // Main body
+        ctx.fillRect(-2 * scale, -6 * scale, 4 * scale, 12 * scale); // Cross
+        
+        // Rotors
+        ctx.fillStyle = '#212121';
+        if (this.state === 'ACTIVE') {
+            // Spin blur
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath(); ctx.arc(-6 * scale, -6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(6 * scale, -6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(-6 * scale, 6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(6 * scale, 6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 1.0;
+        } else {
+            // Static rotors
+            ctx.fillRect(-8 * scale, -7 * scale, 4 * scale, 2 * scale);
+            ctx.fillRect(4 * scale, -7 * scale, 4 * scale, 2 * scale);
+            ctx.fillRect(-8 * scale, 5 * scale, 4 * scale, 2 * scale);
+            ctx.fillRect(4 * scale, 5 * scale, 4 * scale, 2 * scale);
+        }
+
+        // LED Status
+        ctx.fillStyle = this.state === 'ACTIVE' ? '#00FF00' : '#F44336';
+        ctx.fillRect(-1 * scale, -1 * scale, 2 * scale, 2 * scale);
+
+        ctx.restore();
+    }
+}
