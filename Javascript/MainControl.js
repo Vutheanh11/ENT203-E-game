@@ -1,12 +1,13 @@
-import { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings } from './Globals.js';
-import { Player, Projectile, Enemy, Particle, Sawblade, Spear, Pet, Bomb, DamageNumber, FirePatch, Chest, Building, ShotEffect, HitEffect, Drone } from './Entities.js';
-import { ExpGem, showUpgradeOptions, Magnet, Meat, drawIcon, NightVision } from './Item.js';
+import { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings, vehicles } from './Globals.js';
+import { Player, Projectile, Enemy, Particle, Sawblade, Spear, Pet, Bomb, StunBomb, DamageNumber, FirePatch, Chest, Building, ShotEffect, HitEffect, Drone } from './Entities.js';
+import { ExpGem, showUpgradeOptions, showCheatMenu, Magnet, Meat, drawIcon, NightVision } from './Item.js';
 import { startMathQuiz } from './Quiz.js';
 
 const x = canvas.width / 2;
 const y = canvas.height / 2;
 
 let player = new Player(x, y, 15, 'white');
+player.critRate = 0;
 let projectiles = [];
 let enemies = [];
 let particles = [];
@@ -16,6 +17,7 @@ let items = [];
 let sawblades = [];
 let spears = [];
 let bombs = [];
+let stunBombs = [];
 let damageNumbers = [];
 let firePatches = [];
 let chests = [];
@@ -48,7 +50,10 @@ let upgradeLevels = {
     spear: 0,
     pet: 0,
     shield: 0,
-    fireRain: 0
+    fireRain: 0,
+    crit: 0,
+    drone: 0,
+    stunBomb: 0
 };
 const MAX_LEVEL = 4;
 
@@ -58,22 +63,245 @@ let bossSpawnCount = 0;
 const bgCanvas = document.createElement('canvas');
 const bgCtx = bgCanvas.getContext('2d');
 
+function drawAbandonedHelicopter(ctx, x, y, pixelSize) {
+    ctx.save();
+    ctx.translate(x, y);
+    
+    const scale = 4; // Increased scale
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(-16 * scale, -10 * scale, 80 * scale, 40 * scale);
+    
+    // Main body - detailed fuselage
+    ctx.fillStyle = '#2C3E50';
+    ctx.fillRect(-16 * scale, -8 * scale, 32 * scale, 16 * scale);
+    ctx.fillRect(-14 * scale, -10 * scale, 28 * scale, 4 * scale);
+    ctx.fillRect(-14 * scale, 6 * scale, 28 * scale, 4 * scale);
+    
+    // Body panels
+    ctx.fillStyle = '#34495E';
+    ctx.fillRect(-12 * scale, -8 * scale, 24 * scale, 4 * scale);
+    ctx.fillRect(-12 * scale, 4 * scale, 24 * scale, 4 * scale);
+    
+    // Cockpit area
+    ctx.fillStyle = '#1C2E40';
+    ctx.fillRect(-14 * scale, -8 * scale, 12 * scale, 12 * scale);
+    
+    // Windshield (cracked)
+    ctx.fillStyle = '#34495E';
+    ctx.fillRect(-12 * scale, -6 * scale, 8 * scale, 8 * scale);
+    ctx.fillStyle = '#4A5568';
+    ctx.fillRect(-10 * scale, -4 * scale, 4 * scale, 4 * scale);
+    
+    // Windshield cracks
+    ctx.fillStyle = '#1A1F18';
+    ctx.fillRect(-9 * scale, -5 * scale, pixelSize, 6 * scale);
+    ctx.fillRect(-11 * scale, -3 * scale, 4 * scale, pixelSize);
+    
+    // Door panels
+    ctx.fillStyle = '#2C3E50';
+    ctx.fillRect(2 * scale, -6 * scale, 8 * scale, 10 * scale);
+    ctx.strokeStyle = '#1C2E40';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2 * scale, -6 * scale, 8 * scale, 10 * scale);
+    
+    // Door handle
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(8 * scale, -1 * scale, 2 * scale, 2 * scale);
+    
+    // Tail boom (broken)
+    ctx.fillStyle = '#2C3E50';
+    ctx.fillRect(16 * scale, -4 * scale, 24 * scale, 8 * scale);
+    ctx.fillRect(38 * scale, -6 * scale, 4 * scale, 12 * scale);
+    
+    // Tail boom detail
+    ctx.fillStyle = '#34495E';
+    ctx.fillRect(18 * scale, -2 * scale, 20 * scale, 4 * scale);
+    
+    // Skids (landing gear)
+    ctx.fillStyle = '#424242';
+    ctx.fillRect(-18 * scale, 8 * scale, 36 * scale, 3 * scale);
+    ctx.fillRect(-16 * scale, 5 * scale, 3 * scale, 6 * scale);
+    ctx.fillRect(13 * scale, 5 * scale, 3 * scale, 6 * scale);
+    
+    // Engine housing
+    ctx.fillStyle = '#2C3E50';
+    ctx.fillRect(-4 * scale, -12 * scale, 8 * scale, 6 * scale);
+    ctx.fillStyle = '#1C2E40';
+    ctx.fillRect(-3 * scale, -11 * scale, 6 * scale, 4 * scale);
+    
+    // Rotor mast
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(-2 * scale, -14 * scale, 4 * scale, 4 * scale);
+    
+    // Rotor blades (broken, detailed)
+    ctx.fillStyle = '#1A1F18';
+    // Blade 1 (bent down)
+    ctx.fillRect(-28 * scale, -3 * scale, 16 * scale, 3 * scale);
+    ctx.fillRect(-30 * scale, -1 * scale, 4 * scale, pixelSize);
+    // Blade 2 (broken off)
+    ctx.fillRect(12 * scale, -3 * scale, 12 * scale, 3 * scale);
+    // Blade 3 (bent)
+    ctx.fillRect(-3 * scale, -18 * scale, 3 * scale, 12 * scale);
+    
+    // Damage - bullet holes (detailed)
+    ctx.fillStyle = '#0D1117';
+    ctx.fillRect(-8 * scale, -3 * scale, 2 * scale, 2 * scale);
+    ctx.fillRect(4 * scale, 3 * scale, 2 * scale, 2 * scale);
+    ctx.fillRect(-10 * scale, 5 * scale, 3 * scale, 2 * scale);
+    ctx.fillRect(6 * scale, -5 * scale, 2 * scale, 3 * scale);
+    
+    // Burn marks (larger)
+    ctx.fillStyle = '#2C1810';
+    ctx.fillRect(-6 * scale, -8 * scale, 8 * scale, 6 * scale);
+    ctx.fillRect(8 * scale, -2 * scale, 10 * scale, 4 * scale);
+    
+    // Rust streaks
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(-2 * scale, -6 * scale, 3 * scale, 8 * scale);
+    ctx.fillRect(10 * scale, 2 * scale, 6 * scale, 2 * scale);
+    
+    // Military markings (faded)
+    ctx.fillStyle = '#FFD600';
+    ctx.globalAlpha = 0.3;
+    ctx.fillRect(-10 * scale, 0, 2 * scale, 2 * scale);
+    ctx.fillRect(-6 * scale, 0, 2 * scale, 2 * scale);
+    ctx.globalAlpha = 1;
+    
+    ctx.restore();
+}
+
+function drawAbandonedPlane(ctx, x, y, pixelSize) {
+    ctx.save();
+    ctx.translate(x, y);
+    
+    const scale = 5; // Increased scale
+    
+    // Fuselage - main body (detailed)
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(-20 * scale, -5 * scale, 40 * scale, 10 * scale);
+    ctx.fillRect(-18 * scale, -7 * scale, 36 * scale, 4 * scale);
+    ctx.fillRect(-18 * scale, 3 * scale, 36 * scale, 4 * scale);
+    
+    // Body panels and rivets
+    ctx.fillStyle = '#95A5A6';
+    ctx.fillRect(-16 * scale, -5 * scale, 32 * scale, 3 * scale);
+    ctx.fillRect(-16 * scale, 2 * scale, 32 * scale, 3 * scale);
+    
+    // Rivet lines
+    ctx.fillStyle = '#5D6D7E';
+    for (let i = -16; i < 16; i += 4) {
+        ctx.fillRect(i * scale, -6 * scale, pixelSize, pixelSize);
+        ctx.fillRect(i * scale, 4 * scale, pixelSize, pixelSize);
+    }
+    
+    // Nose cone (damaged)
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(-24 * scale, -4 * scale, 4 * scale, 8 * scale);
+    ctx.fillRect(-26 * scale, -3 * scale, 2 * scale, 6 * scale);
+    ctx.fillStyle = '#5D6D7E';
+    ctx.fillRect(-28 * scale, -2 * scale, 2 * scale, 4 * scale);
+    
+    // Nose damage
+    ctx.fillStyle = '#2C1810';
+    ctx.fillRect(-26 * scale, -2 * scale, 4 * scale, 4 * scale);
+    
+    // Cockpit canopy
+    ctx.fillStyle = '#2C3E50';
+    ctx.fillRect(-16 * scale, -6 * scale, 10 * scale, 4 * scale);
+    ctx.fillRect(-14 * scale, -8 * scale, 6 * scale, 3 * scale);
+    
+    // Cockpit glass (reflective)
+    ctx.fillStyle = '#34495E';
+    ctx.fillRect(-14 * scale, -5 * scale, 6 * scale, 3 * scale);
+    ctx.fillStyle = '#4A5568';
+    ctx.fillRect(-13 * scale, -5 * scale, 4 * scale, 2 * scale);
+    
+    // Cracked glass
+    ctx.fillStyle = '#1A1F18';
+    ctx.fillRect(-12 * scale, -5 * scale, pixelSize, 4 * scale);
+    ctx.fillRect(-14 * scale, -4 * scale, 6 * scale, pixelSize);
+    
+    // Left Wing (intact but damaged)
+    ctx.fillStyle = '#95A5A6';
+    ctx.fillRect(-10 * scale, -20 * scale, 16 * scale, 15 * scale);
+    ctx.fillRect(-12 * scale, -18 * scale, 4 * scale, 13 * scale);
+    
+    // Wing panels
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(-8 * scale, -18 * scale, 12 * scale, 4 * scale);
+    ctx.fillRect(-8 * scale, -10 * scale, 12 * scale, 4 * scale);
+    
+    // Left Engine
+    ctx.fillStyle = '#34495E';
+    ctx.fillRect(-6 * scale, -22 * scale, 6 * scale, 6 * scale);
+    ctx.fillStyle = '#2C3E50';
+    ctx.fillRect(-5 * scale, -21 * scale, 4 * scale, 4 * scale);
+    
+    // Right Wing (broken off - stub only)
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(-6 * scale, 5 * scale, 10 * scale, 8 * scale);
+    
+    // Broken wing edge (jagged)
+    ctx.fillStyle = '#5D6D7E';
+    ctx.fillRect(4 * scale, 6 * scale, 2 * scale, 2 * scale);
+    ctx.fillRect(3 * scale, 9 * scale, 2 * scale, 2 * scale);
+    ctx.fillRect(4 * scale, 11 * scale, 2 * scale, 2 * scale);
+    
+    // Tail section
+    ctx.fillStyle = '#7F8C8D';
+    ctx.fillRect(20 * scale, -4 * scale, 12 * scale, 8 * scale);
+    ctx.fillRect(22 * scale, -8 * scale, 6 * scale, 8 * scale);
+    
+    // Rudder
+    ctx.fillStyle = '#95A5A6';
+    ctx.fillRect(24 * scale, -10 * scale, 4 * scale, 6 * scale);
+    
+    // Major damage - large holes
+    ctx.fillStyle = '#0D1117';
+    ctx.fillRect(-10 * scale, -2 * scale, 4 * scale, 4 * scale);
+    ctx.fillRect(6 * scale, 0, 5 * scale, 3 * scale);
+    ctx.fillRect(-2 * scale, 3 * scale, 3 * scale, 4 * scale);
+    ctx.fillRect(14 * scale, -3 * scale, 4 * scale, 3 * scale);
+    
+    // Extensive burn marks
+    ctx.fillStyle = '#2C1810';
+    ctx.fillRect(-14 * scale, -5 * scale, 8 * scale, 6 * scale);
+    ctx.fillRect(10 * scale, -3 * scale, 12 * scale, 6 * scale);
+    ctx.fillRect(-4 * scale, 4 * scale, 8 * scale, 4 * scale);
+    
+    // Rust streaks
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(0, -7 * scale, 3 * scale, 10 * scale);
+    ctx.fillRect(16 * scale, 2 * scale, 6 * scale, 3 * scale);
+    ctx.fillRect(-12 * scale, 0, 4 * scale, 2 * scale);
+    
+    // Military markings (faded star)
+    ctx.fillStyle = '#FFD600';
+    ctx.globalAlpha = 0.4;
+    ctx.fillRect(10 * scale, -2 * scale, 6 * scale, pixelSize);
+    ctx.fillRect(12 * scale, -4 * scale, 2 * scale, 6 * scale);
+    ctx.globalAlpha = 1;
+    
+    ctx.restore();
+}
+
 function generateRuinedStreetBackground() {
     bgCanvas.width = world.width;
     bgCanvas.height = world.height;
     
-    const pixelSize = 4; // Size of one "pixel" in the background
+    const pixelSize = 4;
 
-    // 1. Base Asphalt
-    bgCtx.fillStyle = '#2c2c2c';
+    // 1. Base - Military Concrete
+    bgCtx.fillStyle = '#3E4A3C'; // Dark olive green
     bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
 
-    // 2. Tiled Grid (Optional, for "tile" look)
-    bgCtx.strokeStyle = '#222';
+    // 2. Grid Pattern (Concrete blocks)
+    bgCtx.strokeStyle = '#2C3528';
     bgCtx.lineWidth = pixelSize;
     const tileSize = 64;
     
-    // Draw grid lines
     for (let x = 0; x < bgCanvas.width; x += tileSize) {
         bgCtx.beginPath();
         bgCtx.moveTo(x, 0);
@@ -87,29 +315,28 @@ function generateRuinedStreetBackground() {
         bgCtx.stroke();
     }
 
-    // 3. Noise/Texture (Pixelated)
+    // 3. Dirt/Grime Texture
     for (let i = 0; i < 20000; i++) {
         const x = Math.floor(Math.random() * (bgCanvas.width / pixelSize)) * pixelSize;
         const y = Math.floor(Math.random() * (bgCanvas.height / pixelSize)) * pixelSize;
-        bgCtx.fillStyle = Math.random() > 0.5 ? '#333' : '#252525';
+        bgCtx.fillStyle = Math.random() > 0.5 ? '#4A5548' : '#363D34';
         bgCtx.fillRect(x, y, pixelSize, pixelSize);
     }
 
-    // 4. Road Markings (Pixelated)
-    bgCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    // 4. Runway/Path Markings (Yellow lines)
+    bgCtx.fillStyle = 'rgba(255, 214, 0, 0.6)';
     const dashHeight = 40;
     const gapHeight = 60;
     
-    // Vertical Road
+    // Vertical Path
     const centerX = Math.floor((bgCanvas.width / 2) / pixelSize) * pixelSize;
     for (let y = 0; y < bgCanvas.height; y += dashHeight + gapHeight) {
-        // Snap to pixel grid
         const py = Math.floor(y / pixelSize) * pixelSize;
         const ph = Math.floor(dashHeight / pixelSize) * pixelSize;
         bgCtx.fillRect(centerX - pixelSize * 2, py, pixelSize * 4, ph);
     }
     
-    // Horizontal Road
+    // Horizontal Path
     const centerY = Math.floor((bgCanvas.height / 2) / pixelSize) * pixelSize;
     for (let x = 0; x < bgCanvas.width; x += dashHeight + gapHeight) {
         const px = Math.floor(x / pixelSize) * pixelSize;
@@ -117,15 +344,14 @@ function generateRuinedStreetBackground() {
         bgCtx.fillRect(px, centerY - pixelSize * 2, pw, pixelSize * 4);
     }
 
-    // 5. Cracks (Pixelated Walk)
-    bgCtx.fillStyle = '#111';
-    for (let i = 0; i < 100; i++) {
+    // 5. Battle Damage (Cracks & Craters)
+    bgCtx.fillStyle = '#1A1F18';
+    for (let i = 0; i < 150; i++) {
         let cx = Math.floor(Math.random() * (bgCanvas.width / pixelSize)) * pixelSize;
         let cy = Math.floor(Math.random() * (bgCanvas.height / pixelSize)) * pixelSize;
         
-        for (let j = 0; j < 20; j++) {
+        for (let j = 0; j < 25; j++) {
             bgCtx.fillRect(cx, cy, pixelSize, pixelSize);
-            // Move in random direction
             const dir = Math.floor(Math.random() * 4);
             if (dir === 0) cx += pixelSize;
             else if (dir === 1) cx -= pixelSize;
@@ -134,20 +360,82 @@ function generateRuinedStreetBackground() {
         }
     }
 
-    // 6. Rubble/Debris (Pixelated Clusters)
-    for (let i = 0; i < 300; i++) {
+    // 6. Sandbags / Barriers
+    for (let i = 0; i < 200; i++) {
         let rx = Math.floor(Math.random() * (bgCanvas.width / pixelSize)) * pixelSize;
         let ry = Math.floor(Math.random() * (bgCanvas.height / pixelSize)) * pixelSize;
         
-        bgCtx.fillStyle = '#444';
-        // Draw a small cluster
-        bgCtx.fillRect(rx, ry, pixelSize, pixelSize);
-        bgCtx.fillRect(rx + pixelSize, ry, pixelSize, pixelSize);
-        bgCtx.fillRect(rx, ry + pixelSize, pixelSize, pixelSize);
+        bgCtx.fillStyle = '#5C5442'; // Sand color
+        bgCtx.fillRect(rx, ry, pixelSize * 3, pixelSize * 2);
+        bgCtx.fillRect(rx + pixelSize, ry + pixelSize * 2, pixelSize * 3, pixelSize * 2);
         
         // Highlight
-        bgCtx.fillStyle = '#555';
+        bgCtx.fillStyle = '#6E6650';
         bgCtx.fillRect(rx, ry, pixelSize, pixelSize);
+    }
+
+    // 6.5. Abandoned Helicopters and Planes
+    vehicles.length = 0; // Clear vehicles array
+    const numVehicles = Math.floor(Math.random() * 3) + 2; // 2-4 vehicles
+    
+    function checkOverlap(x, y, w, h) {
+        // Check overlap with buildings
+        for (const building of buildings) {
+            if (!(x + w < building.x || x > building.x + building.width ||
+                  y + h < building.y || y > building.y + building.height)) {
+                return true;
+            }
+        }
+        // Check overlap with other vehicles
+        for (const vehicle of vehicles) {
+            if (!(x + w < vehicle.x || x > vehicle.x + vehicle.width ||
+                  y + h < vehicle.y || y > vehicle.y + vehicle.height)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    for (let i = 0; i < numVehicles; i++) {
+        let vx, vy, vehicleBox;
+        let attempts = 0;
+        const isHeli = Math.random() > 0.5;
+        
+        // Try to find non-overlapping position
+        do {
+            vx = Math.random() * (world.width - 400) + 200;
+            vy = Math.random() * (world.height - 400) + 200;
+            
+            if (isHeli) {
+                vehicleBox = { x: vx - 72, y: vy - 40, width: 168, height: 80 };
+            } else {
+                vehicleBox = { x: vx - 140, y: vy - 110, width: 360, height: 200 };
+            }
+            attempts++;
+        } while (checkOverlap(vehicleBox.x, vehicleBox.y, vehicleBox.width, vehicleBox.height) && attempts < 20);
+        
+        // Only draw if valid position found
+        if (attempts < 20) {
+            if (isHeli) {
+                drawAbandonedHelicopter(bgCtx, vx, vy, pixelSize);
+                vehicles.push({
+                    x: vx - 72,
+                    y: vy - 40,
+                    width: 168,
+                    height: 80,
+                    type: 'helicopter'
+                });
+            } else {
+                drawAbandonedPlane(bgCtx, vx, vy, pixelSize);
+                vehicles.push({
+                    x: vx - 140,
+                    y: vy - 110,
+                    width: 360,
+                    height: 200,
+                    type: 'plane'
+                });
+            }
+        }
     }
 
     // 7. Buildings (City Blocks Layout)
@@ -231,6 +519,7 @@ function init() {
     sawblades = [];
     spears = [];
     bombs = [];
+    stunBombs = [];
     damageNumbers = [];
     firePatches = [];
     chests = [];
@@ -262,7 +551,8 @@ function init() {
         shield: 0,
         fireRain: 0,
         crit: 0,
-        drone: 0
+        drone: 0,
+        stunBomb: 0
     };
 
     player.critRate = 0; // Initialize crit rate
@@ -499,6 +789,8 @@ function updateStats(type, value) {
         } else {
             drone.level++;
         }
+    } else if (type === 'stunBomb') {
+        // Logic handled in animate
     }
 }
 
@@ -694,6 +986,69 @@ function animate(timestamp) {
         }
     });
 
+    // Stun Bomb Logic
+    if (upgradeLevels.stunBomb > 0) {
+        if (!player.lastStunBombTime) player.lastStunBombTime = 0;
+        const stunCooldown = 8000; // 8 seconds
+
+        if (timestamp - player.lastStunBombTime > stunCooldown) {
+            // Find nearest enemy
+            let nearest = null;
+            let minDist = Infinity;
+            enemies.forEach(e => {
+                const d = Math.hypot(e.x - player.x, e.y - player.y);
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = e;
+                }
+            });
+
+            if (nearest) {
+                // Limit throw range to 50px
+                const angle = Math.atan2(nearest.y - player.y, nearest.x - player.x);
+                const throwDist = Math.min(minDist, 50);
+                const tx = player.x + Math.cos(angle) * throwDist;
+                const ty = player.y + Math.sin(angle) * throwDist;
+
+                stunBombs.push(new StunBomb(player.x, player.y, tx, ty, upgradeLevels.stunBomb));
+                player.lastStunBombTime = timestamp;
+            }
+        }
+    }
+
+    stunBombs.forEach((sb, index) => {
+        sb.update();
+        
+        if (sb.exploded) {
+            // Stun enemies in range
+            enemies.forEach(enemy => {
+                const dist = Math.hypot(sb.x - enemy.x, sb.y - enemy.y);
+                if (dist < sb.range + enemy.radius) {
+                    enemy.isStunned = true;
+                    enemy.stunTimer = sb.stunDuration;
+                    // Visual feedback
+                    damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 30, "STUN!", true));
+                }
+            });
+
+            // Explosion visual
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(
+                    sb.x, 
+                    sb.y, 
+                    Math.random() * 3, 
+                    '#00E5FF', 
+                    {
+                        x: (Math.random() - 0.5) * 8,
+                        y: (Math.random() - 0.5) * 8
+                    }
+                ));
+            }
+            
+            stunBombs.splice(index, 1);
+        }
+    });
+
     autoAttack(timestamp);
     // handleSpears(timestamp); // Removed, spears are now permanent
 
@@ -708,6 +1063,9 @@ function animate(timestamp) {
                      enemy.health -= 20; 
                      enemy.lastSawDamage = timestamp;
                      
+                     // Add Hit Effect
+                     effects.push(new HitEffect(enemy.x, enemy.y, enemy.color));
+
                      if (enemy.health <= 0) {
                         killEnemy(enemy, index);
                      }
@@ -760,6 +1118,9 @@ function animate(timestamp) {
                     enemy.health -= 10; 
                     enemy.lastSpearDamage = timestamp;
                     
+                    // Add Hit Effect
+                    effects.push(new HitEffect(enemy.x, enemy.y, enemy.color));
+
                     if (enemy.health <= 0) {
                         killEnemy(enemy, eIndex);
                     }
@@ -794,7 +1155,9 @@ function animate(timestamp) {
                 // Heal player
                 player.health = Math.min(player.maxHealth, player.health + item.healAmount);
                 // Visual feedback for heal
-                damageNumbers.push(new DamageNumber(player.x, player.y - 20, item.healAmount, false)); // Reuse damage number for heal?
+                const healText = new DamageNumber(player.x, player.y - 20, "+" + item.healAmount, false);
+                healText.color = '#00FF00'; // Force Green Color
+                damageNumbers.push(healText); 
                 // Maybe add a green particle effect later
             } else if (item.type === 'nightVision') {
                 nightVisionActive = true;
@@ -881,17 +1244,12 @@ function animate(timestamp) {
                 // Reduce health
                 let damage = projectile.damage || playerDamage;
                 
-                // Crit logic (Only for player projectiles, or maybe drone too? Let's say drone doesn't crit for now or uses player crit rate?)
-                // Let's assume only player main weapon crits for now, or check if it's not drone
-                if (!projectile.isDrone) {
-                    let isCrit = Math.random() < player.critRate; 
-                    if (isCrit) {
-                        damage *= 1.5; // 150% damage
-                    }
-                    damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, isCrit));
-                } else {
-                    damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, false));
+                // Crit logic (Player and Drone share crit rate)
+                let isCrit = Math.random() < player.critRate; 
+                if (isCrit) {
+                    damage *= 1.5; // 150% damage
                 }
+                damageNumbers.push(new DamageNumber(enemy.x, enemy.y - 20, damage, isCrit));
 
                 enemy.health -= damage;
 
@@ -1050,18 +1408,26 @@ function killEnemy(enemy, index) {
 function autoAttack(timestamp) {
     if (timestamp - lastFired < fireRate) return;
 
-    // Find nearest enemy within range
+    // Find nearest enemy within range AND in facing direction
     let nearestEnemy = null;
     let minDist = Infinity;
     const attackRange = 300; // Increased range
+    const viewAngle = Math.PI * 0.7; // Tầm nhìn 126 độ (rộng hơn nửa)
 
     enemies.forEach(enemy => {
         const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
         if (dist < minDist && dist <= attackRange) {
-            // Check Line of Sight
-            if (hasLineOfSight(player, enemy)) {
-                minDist = dist;
-                nearestEnemy = enemy;
+            // Kiểm tra xem quái có trong tầm nhìn không
+            const angleToEnemy = Math.atan2(enemy.y - player.y, enemy.x - player.x);
+            const angleDiff = Math.atan2(Math.sin(angleToEnemy - player.facingAngle), Math.cos(angleToEnemy - player.facingAngle));
+            
+            // Chỉ bắn quái trong tầm nhìn
+            if (Math.abs(angleDiff) <= viewAngle / 2) {
+                // Check Line of Sight
+                if (hasLineOfSight(player, enemy)) {
+                    minDist = dist;
+                    nearestEnemy = enemy;
+                }
             }
         }
     });
@@ -1088,18 +1454,14 @@ function autoAttack(timestamp) {
                 y: Math.sin(angle) * 8
             };
             projectiles.push(new Projectile(player.x, player.y, 5, 'white', velocity));
-            
-            // Add Shot Effect (Muzzle Flash)
-            // Calculate muzzle position based on player rotation (angle)
-            // Gun offset is approx (44, 4) relative to center when facing right
-            // We use the shooting angle for rotation
-            const muzzleDist = 45;
-            const muzzleOffsetAngle = 0.1; // Slight offset for Y
-            const mx = player.x + Math.cos(angle + muzzleOffsetAngle) * muzzleDist;
-            const my = player.y + Math.sin(angle + muzzleOffsetAngle) * muzzleDist;
-            
-            effects.push(new ShotEffect(mx, my, angle));
         }
+        
+        // Add Shot Effect (Muzzle Flash) - Only one effect for all projectiles
+        const muzzleDist = 45;
+        const muzzleOffsetAngle = 0.1;
+        const mx = player.x + Math.cos(baseAngle + muzzleOffsetAngle) * muzzleDist;
+        const my = player.y + Math.sin(baseAngle + muzzleOffsetAngle) * muzzleDist;
+        effects.push(new ShotEffect(mx, my, baseAngle));
         
         lastFired = timestamp;
     }
@@ -1482,5 +1844,66 @@ function handleJoystickMove(input) {
     updatePlayerVelocity();
 }
 
-spawnEnemies();
-animate();
+// Cheat Logic
+const cheatBtn = document.getElementById('cheat-btn');
+const cheatModal = document.getElementById('cheat-modal');
+const closeCheatBtn = document.getElementById('close-cheat');
+
+function openCheatMenu() {
+    isPaused = true;
+    cancelAnimationFrame(animationId);
+    showCheatMenu(player, updateStats, upgradeLevels, MAX_LEVEL);
+}
+
+function closeCheatMenu() {
+    cheatModal.classList.add('hidden');
+    isPaused = false;
+    animate(performance.now());
+}
+
+cheatBtn.addEventListener('click', openCheatMenu);
+closeCheatBtn.addEventListener('click', closeCheatMenu);
+
+// Login Logic
+const loginScreen = document.getElementById('login-screen');
+const loginBtn = document.getElementById('login-btn');
+const usernameInput = document.getElementById('username');
+const uiContainer = document.querySelector('.ui-container');
+
+// Initially hide UI and pause game logic (don't start loop yet)
+uiContainer.classList.add('hidden');
+guideBtn.classList.add('hidden');
+cheatBtn.classList.add('hidden');
+mobileToggleBtn.classList.add('hidden');
+
+loginBtn.addEventListener('click', () => {
+    const username = usernameInput.value.trim() || "Soldier"; // Default if empty
+    player.username = username;
+    
+    // Hide login, show UI
+    loginScreen.classList.add('hidden');
+    uiContainer.classList.remove('hidden');
+    guideBtn.classList.remove('hidden');
+    cheatBtn.classList.remove('hidden');
+    mobileToggleBtn.classList.remove('hidden');
+    
+    // Start Game
+    spawnEnemies();
+    animate();
+});
+
+// Allow Enter key to login
+usernameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        loginBtn.click();
+    }
+});
+document.getElementById('password').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        loginBtn.click();
+    }
+});
+
+// Don't start automatically anymore
+// spawnEnemies();
+// animate();

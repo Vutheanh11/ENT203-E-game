@@ -6,6 +6,7 @@
     <title>2D Shooter Game</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="CSS/Game.css">
+    <link rel="stylesheet" href="CSS/Cheat.css">
 </head>
 <body>
     <div class="ui-container">
@@ -20,6 +21,9 @@
 
     <!-- Guide Button -->
     <button id="guide-btn" class="pixel-btn guide-btn">?</button>
+
+    <!-- Cheat Button -->
+    <button id="cheat-btn" class="pixel-btn cheat-btn">!</button>
 
     <!-- Mobile Controls Toggle -->
     <button id="mobile-toggle-btn" class="pixel-btn mobile-toggle-btn">📱</button>
@@ -47,6 +51,18 @@
         </div>
     </div>
 
+    <!-- Cheat Modal -->
+    <div id="cheat-modal" class="modal hidden">
+        <div class="modal-content cheat-content">
+            <span class="close-btn" id="close-cheat">&times;</span>
+            <h2>Cheat Menu</h2>
+            <p>Select an item to add/upgrade:</p>
+            <div id="cheat-options" class="upgrade-options cheat-options-grid">
+                <!-- Options injected by JS -->
+            </div>
+        </div>
+    </div>
+
     <!-- Math Quiz Modal -->
     <div id="math-modal" class="modal hidden">
         <div class="modal-content">
@@ -66,6 +82,24 @@
             <p>Choose an upgrade:</p>
             <div id="upgrade-options" class="upgrade-options">
                 <!-- Options will be injected here by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="modal">
+        <div class="modal-content login-content">
+            <h2>WELCOME SOLDIER</h2>
+            <div class="login-form">
+                <div class="form-group">
+                    <label for="username">USERNAME:</label>
+                    <input type="text" id="username" class="pixel-input" placeholder="Enter Name" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="password">PASSWORD:</label>
+                    <input type="password" id="password" class="pixel-input" placeholder="Any Password">
+                </div>
+                <button id="login-btn" class="pixel-btn">DEPLOY</button>
             </div>
         </div>
     </div>

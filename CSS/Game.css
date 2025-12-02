@@ -405,3 +405,64 @@ canvas {
     transform: translate(0, 0);
     box-shadow: 0 0 10px rgba(0, 198, 255, 0.5);
 }
+
+/* Login Screen Styles */
+.login-content {
+    max-width: 400px;
+    border: 4px solid #4CAF50; /* Military Green border */
+    background-color: #1b1b1b;
+}
+
+.login-content h2 {
+    color: #4CAF50;
+    margin-bottom: 30px;
+    font-size: 1.5em;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.form-group label {
+    color: #888;
+    font-size: 0.8em;
+}
+
+.pixel-input {
+    width: 100%;
+    padding: 15px;
+    background-color: #333;
+    border: 2px solid #555;
+    color: #fff;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.8em;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.pixel-input:focus {
+    border-color: #4CAF50;
+    background-color: #222;
+}
+
+#login-btn {
+    margin-top: 20px;
+    background-color: #4CAF50;
+    color: #000;
+    font-size: 1em;
+    width: 100%;
+}
+
+#login-btn:hover {
+    background-color: #66BB6A;
+    transform: translate(-2px, -2px);
+}

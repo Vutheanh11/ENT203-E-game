@@ -1,4 +1,4 @@
-import { ctx, canvas, world, buildings } from './Globals.js';
+import { ctx, canvas, world, buildings, vehicles } from './Globals.js';
 
 // Helper for collision
 function checkCircleRectCollision(circle, rect) {
@@ -82,8 +82,8 @@ export class ShotEffect {
         this.x = x;
         this.y = y;
         this.angle = angle;
-        this.life = 3; // Very short life (3 frames)
-        this.maxLife = 3;
+        this.life = 4; // Slightly longer
+        this.maxLife = 4;
     }
 
     update() {
@@ -98,22 +98,35 @@ export class ShotEffect {
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
         
-        const scale = 2; // Pixel scale
+        const scale = 3; // Larger scale
+        const opacity = this.life / this.maxLife;
         
-        // Pixel Muzzle Flash
-        ctx.fillStyle = '#FFFF00'; // Yellow
+        // Outer glow (orange)
+        ctx.globalAlpha = opacity * 0.6;
+        ctx.fillStyle = '#FF6600';
+        ctx.fillRect(-2 * scale, -6 * scale, 14 * scale, 12 * scale);
         
-        // Core
-        ctx.fillRect(0, -2 * scale, 4 * scale, 4 * scale);
+        // Pixel Muzzle Flash - Yellow bright
+        ctx.globalAlpha = opacity;
+        ctx.fillStyle = '#FFFF00';
         
-        // Spikes (Randomized slightly for flicker effect if we wanted, but static is fine for 3 frames)
-        ctx.fillRect(4 * scale, -4 * scale, 4 * scale, 2 * scale); // Top spike
-        ctx.fillRect(4 * scale, 2 * scale, 4 * scale, 2 * scale);  // Bottom spike
-        ctx.fillRect(4 * scale, -1 * scale, 6 * scale, 2 * scale); // Middle long spike
+        // Core (larger)
+        ctx.fillRect(0, -3 * scale, 6 * scale, 6 * scale);
         
-        // Outer particles
-        ctx.fillStyle = '#FFFFFF'; // White hot center
-        ctx.fillRect(0, -1 * scale, 3 * scale, 2 * scale);
+        // Spikes - more prominent
+        ctx.fillRect(6 * scale, -5 * scale, 6 * scale, 3 * scale); // Top spike
+        ctx.fillRect(6 * scale, 2 * scale, 6 * scale, 3 * scale);  // Bottom spike
+        ctx.fillRect(6 * scale, -2 * scale, 8 * scale, 4 * scale); // Middle long spike
+        
+        // Additional side spikes
+        ctx.fillRect(4 * scale, -6 * scale, 3 * scale, 2 * scale); // Top-top
+        ctx.fillRect(4 * scale, 4 * scale, 3 * scale, 2 * scale); // Bottom-bottom
+        
+        // White hot center (brighter)
+        ctx.globalAlpha = opacity;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, -2 * scale, 5 * scale, 4 * scale);
+        ctx.fillRect(2 * scale, -3 * scale, 3 * scale, 6 * scale);
 
         ctx.restore();
     }
@@ -124,13 +137,38 @@ export class HitEffect {
         this.x = x;
         this.y = y;
         this.color = color;
-        this.life = 8;
-        this.radius = 2;
+        this.life = 15;
+        this.bloodSplatters = [];
+        
+        // Create blood splatter particles - more particles
+        const numSplatters = Math.floor(Math.random() * 8) + 12; // 12-19 blood drops
+        for (let i = 0; i < numSplatters; i++) {
+            const angle = (Math.PI * 2 * i) / numSplatters + (Math.random() - 0.5) * 0.5;
+            const speed = Math.random() * 5 + 3; // Faster
+            this.bloodSplatters.push({
+                x: 0,
+                y: 0,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: Math.floor(Math.random() * 4) + 3, // Larger
+                alpha: 1,
+                colorIndex: Math.floor(Math.random() * 3)
+            });
+        }
     }
 
     update() {
         this.life--;
-        this.radius += 2; // Expand
+        
+        // Update blood particles
+        this.bloodSplatters.forEach(splatter => {
+            splatter.x += splatter.vx;
+            splatter.y += splatter.vy;
+            splatter.vy += 0.2; // More gravity
+            splatter.vx *= 0.97; // More air resistance
+            splatter.alpha -= 0.015; // Slower fade
+        });
+        
         this.draw();
     }
 
@@ -139,27 +177,44 @@ export class HitEffect {
         
         ctx.save();
         ctx.translate(this.x, this.y);
-        const scale = 2;
         
-        // Pixel Explosion / Impact
-        // Draw a ring of pixels
-        ctx.fillStyle = 'white';
-        
-        // Calculate pixel positions for a rough circle/square ring
-        const r = Math.floor(this.radius);
-        
-        // Top/Bottom
-        ctx.fillRect(-r * scale, -r * scale, (r * 2) * scale, 2 * scale); // Top
-        ctx.fillRect(-r * scale, r * scale, (r * 2) * scale, 2 * scale);  // Bottom
-        // Left/Right
-        ctx.fillRect(-r * scale, -r * scale, 2 * scale, (r * 2) * scale); // Left
-        ctx.fillRect(r * scale, -r * scale, 2 * scale, (r * 2 + 2) * scale);  // Right
-        
-        // Inner debris
-        if (this.life > 4) {
-            ctx.fillStyle = this.color;
-            ctx.fillRect(-2 * scale, -2 * scale, 4 * scale, 4 * scale);
-        }
+        // Draw blood splatters
+        this.bloodSplatters.forEach(splatter => {
+            if (splatter.alpha > 0) {
+                // Blood colors - darker, more intense reds
+                const bloodColors = ['#660000', '#8B0000', '#990000'];
+                ctx.fillStyle = bloodColors[splatter.colorIndex];
+                
+                const pixelSize = splatter.size;
+                
+                // Outer glow/splatter
+                ctx.globalAlpha = splatter.alpha * 0.4;
+                ctx.fillRect(splatter.x - pixelSize, splatter.y - pixelSize, pixelSize * 2, pixelSize * 2);
+                
+                // Main blood drop (pixel) - darker and more opaque
+                ctx.globalAlpha = Math.min(1, splatter.alpha * 1.2);
+                ctx.fillRect(splatter.x - pixelSize/2, splatter.y - pixelSize/2, pixelSize, pixelSize);
+                
+                // Core darker center
+                ctx.fillStyle = '#330000';
+                ctx.globalAlpha = splatter.alpha;
+                ctx.fillRect(splatter.x - pixelSize/4, splatter.y - pixelSize/4, Math.max(1, pixelSize/2), Math.max(1, pixelSize/2));
+                
+                // Trail effect (longer and more visible)
+                ctx.fillStyle = bloodColors[splatter.colorIndex];
+                ctx.globalAlpha = splatter.alpha * 0.6;
+                const trailLength = 2;
+                for (let t = 1; t <= trailLength; t++) {
+                    const trailSize = pixelSize * (1 - t / (trailLength + 1));
+                    ctx.fillRect(
+                        splatter.x - splatter.vx * t * 0.3 - trailSize/2,
+                        splatter.y - splatter.vy * t * 0.3 - trailSize/2,
+                        Math.max(2, trailSize),
+                        Math.max(2, trailSize)
+                    );
+                }
+            }
+        });
         
         ctx.restore();
     }
@@ -172,60 +227,280 @@ export class Building {
         this.width = width;
         this.height = height;
         this.details = [];
+        this.type = Math.floor(Math.random() * 7); // 7 military building types
         this.generateDetails();
     }
 
     generateDetails() {
         const pixelSize = 4;
-        const numDetails = Math.floor(Math.random() * 5) + 1;
-        for (let j = 0; j < numDetails; j++) {
-            const dw = (Math.floor(Math.random() * 5) + 2) * pixelSize * 2;
-            const dh = (Math.floor(Math.random() * 5) + 2) * pixelSize * 2;
-            const dx = this.x + Math.random() * (this.width - dw);
-            const dy = this.y + Math.random() * (this.height - dh);
-            this.details.push({ x: dx, y: dy, w: dw, h: dh });
+        
+        if (this.type === 0) {
+            // Type 0: Barracks - Bunks and equipment
+            const numBunks = Math.floor(Math.random() * 4) + 2;
+            for (let j = 0; j < numBunks; j++) {
+                const dw = pixelSize * 6;
+                const dh = pixelSize * 4;
+                const dx = this.x + Math.random() * (this.width - dw);
+                const dy = this.y + Math.random() * (this.height - dh);
+                this.details.push({ type: 'bunk', x: dx, y: dy, w: dw, h: dh });
+            }
+        } else if (this.type === 1) {
+            // Type 1: Armory - Weapon crates
+            const numCrates = Math.floor(Math.random() * 5) + 3;
+            for (let j = 0; j < numCrates; j++) {
+                const size = (Math.floor(Math.random() * 3) + 3) * pixelSize;
+                const dx = this.x + Math.random() * (this.width - size);
+                const dy = this.y + Math.random() * (this.height - size);
+                this.details.push({ type: 'crate', x: dx, y: dy, size: size });
+            }
+        } else if (this.type === 2) {
+            // Type 2: Command Center - Radar dish
+            const dx = this.x + this.width / 2;
+            const dy = this.y + this.height / 2;
+            this.details.push({ type: 'radar', x: dx, y: dy });
+        } else if (this.type === 3) {
+            // Type 3: Vehicle Depot - Tires/Tank treads
+            const numItems = Math.floor(Math.random() * 4) + 2;
+            for (let j = 0; j < numItems; j++) {
+                const dx = this.x + Math.random() * (this.width - pixelSize * 8);
+                const dy = this.y + Math.random() * (this.height - pixelSize * 8);
+                this.details.push({ type: 'vehicle', x: dx, y: dy });
+            }
+        } else if (this.type === 4) {
+            // Type 4: Watchtower - Guard post with spotlight
+            const dx = this.x + this.width / 2;
+            const dy = this.y + this.height / 2;
+            this.details.push({ type: 'watchtower', x: dx, y: dy });
+        } else if (this.type === 5) {
+            // Type 5: Medical Bay - Red cross and beds
+            const numBeds = Math.floor(Math.random() * 3) + 2;
+            for (let j = 0; j < numBeds; j++) {
+                const dx = this.x + Math.random() * (this.width - pixelSize * 8);
+                const dy = this.y + Math.random() * (this.height - pixelSize * 6);
+                this.details.push({ type: 'medbed', x: dx, y: dy });
+            }
+        } else if (this.type === 6) {
+            // Type 6: Helipad - Landing circle
+            const dx = this.x + this.width / 2;
+            const dy = this.y + this.height / 2;
+            this.details.push({ type: 'helipad', x: dx, y: dy });
         }
     }
 
     draw(ctx) {
         const pixelSize = 4;
         
-        // Shadow (Optional, usually drawn on BG, but if we redraw on top, we might skip shadow or draw it)
-        // Let's skip shadow here to avoid double shadow on top of fog
+        // Base color - Military colors
+        let baseColor = '#4A5C48'; // Olive drab
+        let borderColor = '#3A4838';
         
-        // Rooftop Base
-        ctx.fillStyle = '#3E2723'; // Dark Brown
+        if (this.type === 2) {
+            baseColor = '#2C3E50'; // Dark blue-grey for command
+            borderColor = '#1C2E40';
+        } else if (this.type === 3) {
+            baseColor = '#3E4A3C'; // Dark green for depot
+            borderColor = '#2C3528';
+        } else if (this.type === 4) {
+            baseColor = '#424242'; // Grey for watchtower
+            borderColor = '#212121';
+        } else if (this.type === 5) {
+            baseColor = '#E8F5E9'; // Light green for medical
+            borderColor = '#C8E6C9';
+        } else if (this.type === 6) {
+            baseColor = '#37474F'; // Dark grey for helipad
+            borderColor = '#263238';
+        }
+        
+        // Building Base with gradient effect
+        ctx.fillStyle = baseColor;
         ctx.fillRect(this.x, this.y, this.width, this.height);
+        
+        // Darker panels for depth
+        ctx.fillStyle = borderColor;
+        ctx.fillRect(this.x + pixelSize, this.y + pixelSize, this.width - pixelSize * 2, pixelSize * 2);
+        ctx.fillRect(this.x + pixelSize, this.y + this.height - pixelSize * 3, this.width - pixelSize * 2, pixelSize * 2);
 
-        // Rooftop Border
-        ctx.strokeStyle = '#5D4037';
+        // Border/Walls
+        ctx.strokeStyle = borderColor;
         ctx.lineWidth = pixelSize;
         ctx.strokeRect(this.x, this.y, this.width, this.height);
+        
+        // Military markings - Stripes (only for non-medical)
+        if (this.type !== 5) {
+            ctx.fillStyle = '#FFD600';
+            ctx.fillRect(this.x + pixelSize, this.y + pixelSize, this.width - pixelSize * 2, pixelSize);
+            ctx.fillRect(this.x + pixelSize, this.y + this.height - pixelSize * 2, this.width - pixelSize * 2, pixelSize);
+        }
+        
+        // Vent grates on corners
+        ctx.fillStyle = '#1A1F18';
+        ctx.fillRect(this.x + pixelSize * 2, this.y + pixelSize * 2, pixelSize * 3, pixelSize * 3);
+        ctx.fillRect(this.x + this.width - pixelSize * 5, this.y + pixelSize * 2, pixelSize * 3, pixelSize * 3);
 
-        // Rooftop Details
+        // Draw Details
         this.details.forEach(d => {
-            ctx.fillStyle = '#616161'; // Grey
-            ctx.fillRect(d.x, d.y, d.w, d.h);
-            
-            // Fan
-            ctx.fillStyle = '#212121';
-            ctx.fillRect(d.x + pixelSize, d.y + pixelSize, d.w - pixelSize*2, d.h - pixelSize*2);
+            if (d.type === 'bunk') {
+                // Bunk bed (top view)
+                ctx.fillStyle = '#5D4E37'; // Brown
+                ctx.fillRect(d.x, d.y, d.w, d.h);
+                
+                // Mattress
+                ctx.fillStyle = '#3E3528';
+                ctx.fillRect(d.x + pixelSize, d.y + pixelSize, d.w - pixelSize * 2, d.h - pixelSize * 2);
+                
+                // Pillow
+                ctx.fillStyle = '#CCCCCC';
+                ctx.fillRect(d.x + pixelSize, d.y + pixelSize, pixelSize * 2, pixelSize * 2);
+            } else if (d.type === 'crate') {
+                // Weapon crate
+                ctx.fillStyle = '#5C4033'; // Dark brown
+                ctx.fillRect(d.x, d.y, d.size, d.size);
+                
+                // Metal straps
+                ctx.fillStyle = '#808080';
+                ctx.fillRect(d.x, d.y + d.size/3, d.size, pixelSize);
+                ctx.fillRect(d.x, d.y + (d.size * 2/3), d.size, pixelSize);
+                ctx.fillRect(d.x + d.size/3, d.y, pixelSize, d.size);
+                ctx.fillRect(d.x + (d.size * 2/3), d.y, pixelSize, d.size);
+                
+                // Danger symbol
+                ctx.fillStyle = '#FFD600';
+                ctx.fillRect(d.x + d.size/2 - pixelSize, d.y + d.size/2 - pixelSize, pixelSize * 2, pixelSize * 2);
+            } else if (d.type === 'radar') {
+                // Radar dish
+                ctx.fillStyle = '#607D8B'; // Blue-grey
+                
+                // Base
+                const baseSize = pixelSize * 8;
+                ctx.fillRect(d.x - baseSize/2, d.y - baseSize/2, baseSize, baseSize);
+                
+                // Dish (octagonal)
+                const dishSize = pixelSize * 12;
+                ctx.fillRect(d.x - dishSize/2, d.y - dishSize/2 - pixelSize * 4, dishSize, pixelSize * 2);
+                ctx.fillRect(d.x - pixelSize, d.y - dishSize/2 - pixelSize * 6, pixelSize * 2, dishSize + pixelSize * 4);
+                ctx.fillRect(d.x - dishSize * 0.35, d.y - dishSize * 0.35 - pixelSize * 4, dishSize * 0.7, pixelSize);
+                ctx.fillRect(d.x - dishSize * 0.35, d.y + dishSize * 0.35 - pixelSize * 4, dishSize * 0.7, pixelSize);
+                
+                // Center
+                ctx.fillStyle = '#37474F';
+                ctx.fillRect(d.x - pixelSize * 2, d.y - pixelSize * 6, pixelSize * 4, pixelSize * 4);
+                
+                // Scanning beam (animated)
+                if (Math.floor(Date.now() / 100) % 4 === 0) {
+                    ctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
+                    ctx.fillRect(d.x - pixelSize, d.y - dishSize/2 - pixelSize * 4, pixelSize * 2, dishSize);
+                }
+            } else if (d.type === 'vehicle') {
+                // Vehicle parts/tires
+                ctx.fillStyle = '#212121'; // Black rubber
+                
+                // Tire stack (top view = circles)
+                for (let t = 0; t < 3; t++) {
+                    const tx = d.x + t * pixelSize * 3;
+                    const ty = d.y;
+                    ctx.fillRect(tx, ty, pixelSize * 6, pixelSize * 2);
+                    ctx.fillRect(tx + pixelSize, ty - pixelSize, pixelSize * 4, pixelSize * 4);
+                    
+                    // Rim
+                    ctx.fillStyle = '#757575';
+                    ctx.fillRect(tx + pixelSize * 2, ty, pixelSize * 2, pixelSize * 2);
+                    ctx.fillStyle = '#212121';
+                }
+            } else if (d.type === 'watchtower') {
+                // Guard tower
+                ctx.fillStyle = '#5D4E37'; // Brown wood
+                
+                // Tower base
+                const baseSize = pixelSize * 8;
+                ctx.fillRect(d.x - baseSize/2, d.y - baseSize/2, baseSize, baseSize);
+                
+                // Tower structure
+                ctx.fillRect(d.x - pixelSize * 2, d.y - baseSize/2 - pixelSize * 16, pixelSize * 4, pixelSize * 16);
+                
+                // Platform
+                ctx.fillStyle = '#8B7355';
+                ctx.fillRect(d.x - pixelSize * 6, d.y - baseSize/2 - pixelSize * 18, pixelSize * 12, pixelSize * 2);
+                
+                // Roof
+                ctx.fillStyle = '#3E2723';
+                ctx.fillRect(d.x - pixelSize * 6, d.y - baseSize/2 - pixelSize * 22, pixelSize * 12, pixelSize * 4);
+                
+                // Spotlight (animated)
+                const blink = Math.floor(Date.now() / 500) % 2 === 0;
+                ctx.fillStyle = blink ? '#FFEB3B' : '#FDD835';
+                ctx.fillRect(d.x - pixelSize, d.y - baseSize/2 - pixelSize * 20, pixelSize * 2, pixelSize * 2);
+                
+                // Searchlight beam
+                if (blink) {
+                    ctx.fillStyle = 'rgba(255, 235, 59, 0.2)';
+                    ctx.fillRect(d.x - pixelSize * 4, d.y - baseSize/2 - pixelSize * 20, pixelSize * 8, pixelSize * 30);
+                }
+            } else if (d.type === 'medbed') {
+                // Medical bed
+                ctx.fillStyle = '#FFFFFF'; // White bed
+                ctx.fillRect(d.x, d.y, pixelSize * 8, pixelSize * 6);
+                
+                // Mattress
+                ctx.fillStyle = '#E3F2FD';
+                ctx.fillRect(d.x + pixelSize, d.y + pixelSize, pixelSize * 6, pixelSize * 4);
+                
+                // Pillow
+                ctx.fillStyle = '#BBDEFB';
+                ctx.fillRect(d.x + pixelSize, d.y + pixelSize, pixelSize * 2, pixelSize * 2);
+                
+                // IV stand
+                ctx.fillStyle = '#9E9E9E';
+                ctx.fillRect(d.x + pixelSize * 7, d.y, pixelSize, pixelSize * 8);
+                ctx.fillRect(d.x + pixelSize * 6, d.y, pixelSize * 3, pixelSize);
+                
+                // Red cross nearby
+                ctx.fillStyle = '#F44336';
+                ctx.fillRect(d.x - pixelSize * 2, d.y + pixelSize, pixelSize, pixelSize * 4);
+                ctx.fillRect(d.x - pixelSize * 4, d.y + pixelSize * 2, pixelSize * 5, pixelSize);
+            } else if (d.type === 'helipad') {
+                // Helipad circle
+                ctx.fillStyle = '#FFD600'; // Yellow
+                
+                // Landing circle (octagonal pixel circle)
+                const r = pixelSize * 12;
+                ctx.fillRect(d.x - r, d.y - pixelSize * 2, r * 2, pixelSize * 4);
+                ctx.fillRect(d.x - pixelSize * 2, d.y - r, pixelSize * 4, r * 2);
+                ctx.fillRect(d.x - r * 0.7, d.y - r * 0.7, r * 1.4, pixelSize * 2);
+                ctx.fillRect(d.x - r * 0.7, d.y + r * 0.7 - pixelSize * 2, r * 1.4, pixelSize * 2);
+                
+                // H letter
+                ctx.fillRect(d.x - pixelSize * 4, d.y - pixelSize * 6, pixelSize * 2, pixelSize * 12);
+                ctx.fillRect(d.x + pixelSize * 2, d.y - pixelSize * 6, pixelSize * 2, pixelSize * 12);
+                ctx.fillRect(d.x - pixelSize * 4, d.y - pixelSize, pixelSize * 8, pixelSize * 2);
+                
+                // Corner lights (blinking)
+                const lightBlink = Math.floor(Date.now() / 800) % 2 === 0;
+                if (lightBlink) {
+                    ctx.fillStyle = '#FF5722';
+                    ctx.fillRect(d.x - r + pixelSize, d.y - r + pixelSize, pixelSize * 2, pixelSize * 2);
+                    ctx.fillRect(d.x + r - pixelSize * 3, d.y - r + pixelSize, pixelSize * 2, pixelSize * 2);
+                    ctx.fillRect(d.x - r + pixelSize, d.y + r - pixelSize * 3, pixelSize * 2, pixelSize * 2);
+                    ctx.fillRect(d.x + r - pixelSize * 3, d.y + r - pixelSize * 3, pixelSize * 2, pixelSize * 2);
+                }
+            }
         });
     }
 }
 
 export class Player {
-    constructor(x, y, radius, color) {
+    constructor(x, y, radius, color, username = "Soldier") {
         this.x = x;
         this.y = y;
         this.radius = radius;
         this.color = color;
+        this.username = username;
         this.velocity = { x: 0, y: 0 };
-        this.speed = 2;
+        this.speed = 1.5;
         this.maxHealth = 150;
         this.health = 150;
         this.lastDamageTime = 0;
         this.invulnerableTime = 500; // ms
+        this.facingAngle = 0; // Hướng nhìn của nhân vật
         this.shield = {
             unlocked: false,
             active: false,
@@ -238,56 +513,54 @@ export class Player {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        // Rotate towards movement direction
-        if (this.velocity.x !== 0 || this.velocity.y !== 0) {
-            const angle = Math.atan2(this.velocity.y, this.velocity.x);
-            ctx.rotate(angle);
-        }
+        // Rotate towards facing direction (smoothly)
+        ctx.rotate(this.facingAngle);
 
         const scale = 0.8; 
 
-        // --- Top-Down Soldier (Facing Right) ---
+        // --- Top-Down Soldier (Vẽ hướng lên trên = 0 độ, súng chỉ lên) ---
         
-        // Feet (Simple animation)
+        // Feet (Simple animation) - Bên trái và phải
         const walkCycle = Math.sin(performance.now() / 100) * 5;
         
         ctx.fillStyle = '#111'; // Boots
-        ctx.fillRect((-10 + walkCycle) * scale, -15 * scale, 14 * scale, 8 * scale); // Left Foot (Top)
-        ctx.fillRect((-10 - walkCycle) * scale, 7 * scale, 14 * scale, 8 * scale); // Right Foot (Bottom)
+        ctx.fillRect(-15 * scale, (-10 + walkCycle) * scale, 8 * scale, 14 * scale); // Left Foot
+        ctx.fillRect(7 * scale, (-10 - walkCycle) * scale, 8 * scale, 14 * scale); // Right Foot
 
         // Body (Shoulders/Vest)
         ctx.fillStyle = '#1A237E'; // Blue Vest
         ctx.fillRect(-15 * scale, -15 * scale, 30 * scale, 30 * scale); // Main body
         
-        // Backpack
+        // Backpack (phía sau/dưới)
         ctx.fillStyle = '#3E2723'; // Brown
-        ctx.fillRect(-20 * scale, -12 * scale, 8 * scale, 24 * scale);
+        ctx.fillRect(-12 * scale, 12 * scale, 24 * scale, 8 * scale);
 
-        // Head (Helmet)
+        // Head (Helmet) - Pixel Style
         ctx.fillStyle = '#33691E'; // Green Helmet
-        ctx.beginPath();
-        ctx.arc(0, 0, 12 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-10 * scale, -10 * scale, 20 * scale, 20 * scale); // Main head
         
-        // Helmet details (Camo)
+        // Helmet details (Camo) - Pixel patches
         ctx.fillStyle = '#1B5E20';
-        ctx.beginPath();
-        ctx.arc(-2 * scale, -2 * scale, 6 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-6 * scale, -6 * scale, 8 * scale, 8 * scale);
+        ctx.fillRect(2 * scale, 2 * scale, 4 * scale, 4 * scale);
+        
+        // Visor/Face (hướng lên)
+        ctx.fillStyle = '#212121';
+        ctx.fillRect(-4 * scale, -4 * scale, 8 * scale, 4 * scale);
 
-        // Arms & Gun
+        // Arms & Gun (súng chỉ lên phía trước)
         // Hands holding gun
         ctx.fillStyle = '#3E2723'; // Gloves
-        ctx.fillRect(10 * scale, 8 * scale, 10 * scale, 8 * scale); // Right hand (Trigger)
-        ctx.fillRect(25 * scale, -2 * scale, 8 * scale, 8 * scale); // Left hand (Barrel)
+        ctx.fillRect(8 * scale, -20 * scale, 8 * scale, 10 * scale); // Right hand (on barrel)
+        ctx.fillRect(-2 * scale, -10 * scale, 8 * scale, 8 * scale); // Left hand (trigger)
 
-        // Gun (Rifle)
+        // Gun (Rifle) - chỉ lên
         ctx.fillStyle = '#212121'; // Gun Metal
-        ctx.fillRect(15 * scale, 2 * scale, 40 * scale, 6 * scale); // Barrel/Body
+        ctx.fillRect(2 * scale, -40 * scale, 6 * scale, 40 * scale); // Barrel (vertical)
         ctx.fillStyle = '#3E2723'; // Wood Stock
-        ctx.fillRect(0 * scale, 2 * scale, 15 * scale, 6 * scale); 
+        ctx.fillRect(2 * scale, -10 * scale, 6 * scale, 15 * scale); 
         ctx.fillStyle = '#000'; // Mag
-        ctx.fillRect(25 * scale, 8 * scale, 6 * scale, 10 * scale);
+        ctx.fillRect(-4 * scale, -20 * scale, 6 * scale, 6 * scale);
 
         ctx.restore();
         
@@ -296,6 +569,16 @@ export class Player {
         const barHeight = 5;
         const yOffset = 40; 
         
+        // Draw Username
+        ctx.save();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '10px "Press Start 2P"'; // Pixel font
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 2;
+        ctx.fillText(this.username, this.x, this.y - yOffset - 10);
+        ctx.restore();
+
         ctx.fillStyle = 'red';
         ctx.fillRect(this.x - barWidth / 2, this.y - yOffset, barWidth, barHeight);
         
@@ -312,41 +595,70 @@ export class Player {
              ctx.stroke();
         }
 
+        // Draw facing direction indicator (for debugging/visual feedback)
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.facingAngle);
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)'; // Semi-transparent yellow
+        // Draw a cone to show facing direction
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, 40, -Math.PI * 0.35, Math.PI * 0.35); // 126-degree cone
+        ctx.closePath();
+        ctx.fill();
+        // Draw center line
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(40, 0);
+        ctx.stroke();
+        ctx.restore();
+
         // Draw Shield (Pixel Art Style)
         if (this.shield.active) {
             ctx.save();
             ctx.translate(this.x, this.y); 
-            const shieldRadius = this.radius + 12;
             const pixelSize = 4;
-            const numSegments = 12; 
-            const angleStep = (Math.PI * 2) / numSegments;
-            
-            const rotation = performance.now() / 500; 
+            const shieldSize = 32;
+            const rotation = Math.floor(performance.now() / 100) % 4; // Discrete rotation
             
             ctx.fillStyle = '#00E5FF'; 
             
-            for(let i=0; i<numSegments; i++) {
-                const angle = i * angleStep + rotation;
-                const sx = Math.cos(angle) * shieldRadius;
-                const sy = Math.sin(angle) * shieldRadius;
-                
-                ctx.fillRect(sx - pixelSize/2, sy - pixelSize/2, pixelSize, pixelSize);
-            }
+            // Outer pixel ring (Hexagonal shape)
+            const pixels = [
+                [-shieldSize, 0], [shieldSize, 0], // Left, Right
+                [0, -shieldSize], [0, shieldSize], // Top, Bottom
+                [-shieldSize*0.7, -shieldSize*0.7], [shieldSize*0.7, -shieldSize*0.7], // Diagonals
+                [-shieldSize*0.7, shieldSize*0.7], [shieldSize*0.7, shieldSize*0.7]
+            ];
             
-            // Inner Ring (Faint)
+            pixels.forEach((pos, i) => {
+                if ((i + rotation) % 2 === 0) {
+                    ctx.fillRect(pos[0] - pixelSize/2, pos[1] - pixelSize/2, pixelSize, pixelSize);
+                }
+            });
+            
+            // Inner Ring (Static)
             ctx.fillStyle = 'rgba(0, 229, 255, 0.5)';
-            for(let i=0; i<numSegments; i++) {
-                const angle = i * angleStep - rotation; // Counter rotate
-                const sx = Math.cos(angle) * (shieldRadius - 6);
-                const sy = Math.sin(angle) * (shieldRadius - 6);
-                ctx.fillRect(sx - 2, sy - 2, 4, 4);
-            }
+            ctx.fillRect(-shieldSize*0.5, -pixelSize/2, shieldSize, pixelSize); // Horizontal
+            ctx.fillRect(-pixelSize/2, -shieldSize*0.5, pixelSize, shieldSize); // Vertical
 
             ctx.restore();
         }
     }
 
     update(timestamp) {
+        // Update facing angle based on movement
+        if (this.velocity.x !== 0 || this.velocity.y !== 0) {
+            const targetAngle = Math.atan2(this.velocity.y, this.velocity.x);
+            // Smooth rotation
+            const angleDiff = targetAngle - this.facingAngle;
+            // Normalize angle difference to [-PI, PI]
+            const normalizedDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+            this.facingAngle += normalizedDiff * 0.2; // Smooth factor
+        }
+        
         this.draw();
         
         // Store previous position
@@ -360,6 +672,13 @@ export class Player {
         buildings.forEach(building => {
             if (checkCircleRectCollision(this, building)) {
                 resolveCollision(this, building);
+            }
+        });
+        
+        // Vehicle Collision
+        vehicles.forEach(vehicle => {
+            if (checkCircleRectCollision(this, vehicle)) {
+                resolveCollision(this, vehicle);
             }
         });
 
@@ -389,28 +708,30 @@ export class Projectile {
     }
 
     draw() {
-        // Draw tail
+        // Draw tail - Pixel style
         this.tail.forEach((pos, index) => {
             const alpha = (index / this.tail.length) * 0.5;
-            const size = this.radius * (index / this.tail.length);
+            const pixelSize = Math.max(2, Math.floor(this.radius * (index / this.tail.length)));
             
             ctx.save();
             ctx.globalAlpha = alpha;
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, size, 0, Math.PI * 2, false);
             ctx.fillStyle = this.color;
-            ctx.fill();
+            ctx.fillRect(pos.x - pixelSize/2, pos.y - pixelSize/2, pixelSize, pixelSize);
             ctx.restore();
         });
 
-        // Draw head with glow
+        // Draw head - Pixel bullet
         ctx.save();
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
         ctx.fillStyle = this.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
-        ctx.fill();
+        const pixelSize = this.radius;
+        // Core
+        ctx.fillRect(this.x - pixelSize, this.y - pixelSize, pixelSize * 2, pixelSize * 2);
+        // Glow effect (outer pixels)
+        ctx.globalAlpha = 0.6;
+        ctx.fillRect(this.x - pixelSize - 2, this.y - pixelSize/2, 2, pixelSize);
+        ctx.fillRect(this.x + pixelSize, this.y - pixelSize/2, 2, pixelSize);
+        ctx.fillRect(this.x - pixelSize/2, this.y - pixelSize - 2, pixelSize, 2);
+        ctx.fillRect(this.x - pixelSize/2, this.y + pixelSize, pixelSize, 2);
         ctx.restore();
     }
 
@@ -438,6 +759,8 @@ export class Enemy {
         this.maxHealth = health;
         this.type = type;
         this.scoreValue = scoreValue;
+        this.isStunned = false;
+        this.stunTimer = 0;
     }
 
     draw() {
@@ -450,168 +773,215 @@ export class Enemy {
             ctx.rotate(angle);
         }
 
+        // Stun Effect (Visual)
+        if (this.isStunned) {
+            ctx.save();
+            ctx.rotate(performance.now() / 100); // Spin effect
+            ctx.strokeStyle = '#00E5FF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, -this.radius - 10, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if (this.type === 'boss') {
-            // Giant Skull Top Down
+            // Giant Skull Top Down - Pixel Art
             const scale = 5; 
             ctx.fillStyle = '#FFFFFF'; 
-            // Skull Main
-            ctx.beginPath();
-            ctx.arc(-2 * scale, 0, 8 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            // Skull Main (Rounded square)
+            ctx.fillRect(-10 * scale, -8 * scale, 20 * scale, 16 * scale); // Main cranium
+            ctx.fillRect(-8 * scale, -10 * scale, 16 * scale, 4 * scale); // Top
+            ctx.fillRect(-8 * scale, 6 * scale, 16 * scale, 4 * scale); // Bottom
+            
             // Jaw
             ctx.fillRect(2 * scale, -6 * scale, 8 * scale, 12 * scale);
-            // Eyes
+            
+            // Eyes - Pixel hollows
             ctx.fillStyle = 'black';
-            ctx.beginPath();
-            ctx.arc(2 * scale, -3 * scale, 2 * scale, 0, Math.PI * 2);
-            ctx.arc(2 * scale, 3 * scale, 2 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(2 * scale, -5 * scale, 4 * scale, 4 * scale); // Left eye
+            ctx.fillRect(2 * scale, 1 * scale, 4 * scale, 4 * scale); // Right eye
+            
+            // Nose hole
+            ctx.fillRect(0, -1 * scale, 2 * scale, 2 * scale);
 
         } else if (this.type === 'boss_spider') {
-            // Giant Spider Top Down
+            // Giant Spider Top Down - Pixel Art
             const scale = 4;
             ctx.fillStyle = '#212121'; // Black Body
             
-            // Legs (8)
-            ctx.strokeStyle = '#212121';
-            ctx.lineWidth = 2 * scale;
-            for(let i=0; i<8; i++) {
-                const legAngle = (i / 8) * Math.PI * 2;
-                const lx = Math.cos(legAngle) * 12 * scale;
-                const ly = Math.sin(legAngle) * 12 * scale;
-                
-                // Jointed leg look
-                ctx.beginPath();
-                ctx.moveTo(0, 0);
-                ctx.lineTo(lx, ly);
-                ctx.lineTo(lx + Math.cos(legAngle + 0.5) * 8 * scale, ly + Math.sin(legAngle + 0.5) * 8 * scale);
-                ctx.stroke();
-            }
+            // Legs (8) - Pixel art style
+            const legData = [
+                {x: -12*scale, y: -8*scale}, {x: 12*scale, y: -8*scale}, // Front
+                {x: -14*scale, y: -2*scale}, {x: 14*scale, y: -2*scale}, // Mid-front
+                {x: -14*scale, y: 2*scale}, {x: 14*scale, y: 2*scale}, // Mid-back
+                {x: -12*scale, y: 8*scale}, {x: 12*scale, y: 8*scale}  // Back
+            ];
+            
+            legData.forEach(leg => {
+                ctx.fillRect(leg.x > 0 ? 8*scale : leg.x, leg.y - scale, Math.abs(leg.x) - 6*scale, 2*scale);
+                // Knee joint
+                ctx.fillRect(leg.x - 2*scale, leg.y - 2*scale, 4*scale, 4*scale);
+            });
 
-            // Abdomen (Rear)
-            ctx.beginPath();
-            ctx.ellipse(-5 * scale, 0, 8 * scale, 6 * scale, 0, 0, Math.PI * 2);
-            ctx.fill();
+            // Abdomen (Rear) - Pixel oval
+            ctx.fillRect(-12 * scale, -6 * scale, 16 * scale, 12 * scale); // Main
+            ctx.fillRect(-10 * scale, -8 * scale, 12 * scale, 4 * scale); // Top
+            ctx.fillRect(-10 * scale, 4 * scale, 12 * scale, 4 * scale); // Bottom
+            
             // Red hourglass/mark
             ctx.fillStyle = '#D50000';
-            ctx.beginPath();
-            ctx.moveTo(-6 * scale, -2 * scale);
-            ctx.lineTo(-4 * scale, 0);
-            ctx.lineTo(-6 * scale, 2 * scale);
-            ctx.lineTo(-8 * scale, 0);
-            ctx.fill();
+            ctx.fillRect(-6 * scale, -2 * scale, 4 * scale, 4 * scale);
+            ctx.fillRect(-8 * scale, -1 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(-4 * scale, -1 * scale, 2 * scale, 2 * scale);
 
-            // Cephalothorax (Head/Thorax)
+            // Cephalothorax (Head/Thorax) - Pixel circle
             ctx.fillStyle = '#212121';
-            ctx.beginPath();
-            ctx.arc(4 * scale, 0, 5 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(2 * scale, -5 * scale, 10 * scale, 10 * scale); // Main
+            ctx.fillRect(4 * scale, -6 * scale, 6 * scale, 2 * scale); // Top edge
+            ctx.fillRect(4 * scale, 4 * scale, 6 * scale, 2 * scale); // Bottom edge
 
-            // Eyes (Many)
+            // Eyes (Many) - Pixel dots
             ctx.fillStyle = 'red';
-            ctx.beginPath(); ctx.arc(6 * scale, -2 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(6 * scale, 2 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(7 * scale, -1 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(7 * scale, 1 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.fillRect(8 * scale, -3 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(8 * scale, 1 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(10 * scale, -2 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(10 * scale, 0, 2 * scale, 2 * scale);
 
         } else if (this.type === 'boss_mutant') {
-            // Mutant Zombie Top Down
+            // Mutant Zombie Top Down - Pixel Art
             const scale = 4;
             
             // Left Arm (Normal)
             ctx.fillStyle = '#689F38'; // Green
-            ctx.fillRect(4 * scale, -8 * scale, 4 * scale, 12 * scale);
+            ctx.fillRect(4 * scale, -10 * scale, 4 * scale, 14 * scale);
+            ctx.fillRect(6 * scale, -12 * scale, 3 * scale, 3 * scale); // Hand
             
-            // Right Arm (Mutated Giant)
+            // Right Arm (Mutated Giant) - Pixel blob
             ctx.fillStyle = '#33691E'; // Dark Green
-            ctx.beginPath();
-            ctx.ellipse(4 * scale, 8 * scale, 8 * scale, 5 * scale, 0, 0, Math.PI * 2);
-            ctx.fill();
-            // Claws/Fist
+            ctx.fillRect(2 * scale, 6 * scale, 16 * scale, 10 * scale); // Main mass
+            ctx.fillRect(4 * scale, 4 * scale, 12 * scale, 4 * scale); // Top
+            ctx.fillRect(4 * scale, 14 * scale, 12 * scale, 4 * scale); // Bottom
+            
+            // Claws/Fist - Pixel spikes
             ctx.fillStyle = '#1B5E20';
-            ctx.beginPath();
-            ctx.arc(10 * scale, 8 * scale, 4 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(16 * scale, 8 * scale, 4 * scale, 6 * scale); // Main fist
+            ctx.fillRect(18 * scale, 6 * scale, 2 * scale, 2 * scale); // Claw 1
+            ctx.fillRect(18 * scale, 10 * scale, 2 * scale, 2 * scale); // Claw 2
+            ctx.fillRect(18 * scale, 12 * scale, 2 * scale, 2 * scale); // Claw 3
 
             // Body
             ctx.fillStyle = '#424242'; // Tattered Grey Shirt
             ctx.fillRect(-8 * scale, -8 * scale, 16 * scale, 16 * scale);
+            // Torn edges
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(-8 * scale, -2 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(6 * scale, 4 * scale, 2 * scale, 2 * scale);
             
-            // Head
+            // Head - Pixel square
             ctx.fillStyle = '#689F38';
-            ctx.beginPath();
-            ctx.arc(0, 0, 6 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(-6 * scale, -6 * scale, 12 * scale, 12 * scale); // Main head
+            ctx.fillRect(-4 * scale, -8 * scale, 8 * scale, 2 * scale); // Top
             
-            // Pustules/Veins
+            // Pustules/Veins - Pixel blobs
             ctx.fillStyle = '#76FF03'; // Toxic Green
-            ctx.beginPath(); ctx.arc(-2 * scale, -2 * scale, 1.5 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(2 * scale, 3 * scale, 1 * scale, 0, Math.PI*2); ctx.fill();
+            ctx.fillRect(-3 * scale, -3 * scale, 3 * scale, 3 * scale);
+            ctx.fillRect(2 * scale, 2 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(0, -5 * scale, 2 * scale, 2 * scale);
 
         } else if (this.type === 'small') {
-            // Baby Zombie Top Down
+            // Baby Zombie Top Down - Pixel Art
             const scale = 0.8; 
             
             // Arms (Reaching forward)
             ctx.fillStyle = '#8BC34A'; // Green Skin
-            ctx.fillRect(5 * scale, -12 * scale, 15 * scale, 6 * scale); // Left Arm
-            ctx.fillRect(5 * scale, 6 * scale, 15 * scale, 6 * scale); // Right Arm
+            ctx.fillRect(6 * scale, -12 * scale, 14 * scale, 6 * scale); // Left Arm
+            ctx.fillRect(6 * scale, 6 * scale, 14 * scale, 6 * scale); // Right Arm
+            // Hands
+            ctx.fillRect(18 * scale, -11 * scale, 4 * scale, 4 * scale);
+            ctx.fillRect(18 * scale, 7 * scale, 4 * scale, 4 * scale);
 
             // Shoulders/Body
             ctx.fillStyle = '#0288D1'; // Blue Shirt
             ctx.fillRect(-10 * scale, -10 * scale, 20 * scale, 20 * scale);
 
-            // Head
+            // Head - Pixel square
             ctx.fillStyle = '#8BC34A'; // Green
-            ctx.beginPath();
-            ctx.arc(0, 0, 8 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(-8 * scale, -8 * scale, 16 * scale, 16 * scale); // Main
+            ctx.fillRect(-6 * scale, -10 * scale, 12 * scale, 2 * scale); // Top edge
+            
+            // Eyes - Pixel dots
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(-4 * scale, -2 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(2 * scale, -2 * scale, 2 * scale, 2 * scale);
 
         } else if (this.type === 'elite') {
-            // Zombie Top Down
+            // Zombie Top Down - Pixel Art
             const scale = 1.0;
             
             // Arms
             ctx.fillStyle = '#4CAF50';
-            ctx.fillRect(5 * scale, -14 * scale, 18 * scale, 7 * scale);
-            ctx.fillRect(5 * scale, 7 * scale, 18 * scale, 7 * scale);
+            ctx.fillRect(6 * scale, -14 * scale, 18 * scale, 7 * scale);
+            ctx.fillRect(6 * scale, 7 * scale, 18 * scale, 7 * scale);
+            // Hands
+            ctx.fillRect(22 * scale, -13 * scale, 4 * scale, 5 * scale);
+            ctx.fillRect(22 * scale, 8 * scale, 4 * scale, 5 * scale);
 
             // Body
             ctx.fillStyle = '#5D4037'; // Brown Shirt
             ctx.fillRect(-12 * scale, -12 * scale, 24 * scale, 24 * scale);
+            // Belt
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(-12 * scale, -2 * scale, 24 * scale, 4 * scale);
 
-            // Head
+            // Head - Pixel square
             ctx.fillStyle = '#4CAF50';
-            ctx.beginPath();
-            ctx.arc(0, 0, 10 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(-10 * scale, -10 * scale, 20 * scale, 20 * scale); // Main
+            ctx.fillRect(-8 * scale, -12 * scale, 16 * scale, 2 * scale); // Top
+            
+            // Eyes - Glowing red
+            ctx.fillStyle = '#D32F2F';
+            ctx.fillRect(-6 * scale, -4 * scale, 3 * scale, 3 * scale);
+            ctx.fillRect(3 * scale, -4 * scale, 3 * scale, 3 * scale);
 
         } else if (this.type === 'big') {
-            // Armored Zombie Top Down
+            // Armored Zombie Top Down - Pixel Art
             const scale = 1.2;
             
             // Arms (Armored)
             ctx.fillStyle = '#2E7D32'; // Green Skin
-            ctx.fillRect(5 * scale, -16 * scale, 20 * scale, 8 * scale);
-            ctx.fillRect(5 * scale, 8 * scale, 20 * scale, 8 * scale);
-            // Pauldrons
+            ctx.fillRect(6 * scale, -16 * scale, 20 * scale, 8 * scale);
+            ctx.fillRect(6 * scale, 8 * scale, 20 * scale, 8 * scale);
+            // Pauldrons - Pixel armor
             ctx.fillStyle = '#757575'; // Grey Armor
-            ctx.fillRect(-5 * scale, -18 * scale, 12 * scale, 10 * scale);
-            ctx.fillRect(-5 * scale, 8 * scale, 12 * scale, 10 * scale);
+            ctx.fillRect(-6 * scale, -20 * scale, 14 * scale, 12 * scale);
+            ctx.fillRect(-6 * scale, 8 * scale, 14 * scale, 12 * scale);
+            // Armor rivets
+            ctx.fillStyle = '#424242';
+            ctx.fillRect(-4 * scale, -18 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(4 * scale, -18 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(-4 * scale, 10 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(4 * scale, 10 * scale, 2 * scale, 2 * scale);
 
             // Body (Chestplate)
             ctx.fillStyle = '#9E9E9E';
             ctx.fillRect(-15 * scale, -15 * scale, 30 * scale, 30 * scale);
+            // Plate details
+            ctx.fillStyle = '#757575';
+            ctx.fillRect(-12 * scale, -12 * scale, 24 * scale, 4 * scale);
+            ctx.fillRect(-12 * scale, 8 * scale, 24 * scale, 4 * scale);
 
-            // Head (Helmet)
+            // Head (Helmet) - Pixel square
             ctx.fillStyle = '#616161';
-            ctx.beginPath();
-            ctx.arc(0, 0, 12 * scale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fillRect(-12 * scale, -12 * scale, 24 * scale, 24 * scale); // Main
+            ctx.fillRect(-10 * scale, -14 * scale, 20 * scale, 2 * scale); // Top edge
+            // Visor slit
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(-8 * scale, -4 * scale, 16 * scale, 4 * scale);
             // Red Eyes glow
             ctx.fillStyle = '#D32F2F';
-            ctx.fillRect(8 * scale, -4 * scale, 2 * scale, 2 * scale);
-            ctx.fillRect(8 * scale, 2 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(-4 * scale, -2 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(2 * scale, -2 * scale, 2 * scale, 2 * scale);
 
         } else {
             // Fallback
@@ -633,6 +1003,15 @@ export class Enemy {
     update(player) {
         this.draw();
         
+        // Handle Stun
+        if (this.isStunned) {
+            this.stunTimer--;
+            if (this.stunTimer <= 0) {
+                this.isStunned = false;
+            }
+            return; // Skip movement if stunned
+        }
+
         // --- Context Steering (Obstacle Avoidance) ---
         const numRays = 8;
         const lookAhead = 80; // Distance to check for obstacles
@@ -679,11 +1058,14 @@ export class Enemy {
         }
         
         // Apply velocity based on best direction
-        // Base speed
-        let speed = 0.8; // Default speed
-        if (this.type === 'boss') speed = 0.6;
-        if (this.type === 'small') speed = 1.0;
-        if (this.type === 'big') speed = 0.5;
+        // Base speed (giảm xuống)
+        let speed = 0.5; // Default speed (giảm từ 0.8)
+        if (this.type === 'boss') speed = 0.4; // Giảm từ 0.6
+        if (this.type === 'boss_spider') speed = 0.45; // Spider nhanh hơn boss thường
+        if (this.type === 'boss_mutant') speed = 0.35; // Mutant chậm nhất
+        if (this.type === 'small') speed = 0.6; // Giảm từ 1.0
+        if (this.type === 'elite') speed = 0.5; // Elite speed
+        if (this.type === 'big') speed = 0.35; // Giảm từ 0.5
 
         this.velocity.x = bestDir.x * speed;
         this.velocity.y = bestDir.y * speed;
@@ -695,6 +1077,13 @@ export class Enemy {
         buildings.forEach(building => {
             if (checkCircleRectCollision(this, building)) {
                 resolveCollision(this, building);
+            }
+        });
+        
+        // Vehicle Collision
+        vehicles.forEach(vehicle => {
+            if (checkCircleRectCollision(this, vehicle)) {
+                resolveCollision(this, vehicle);
             }
         });
     }
@@ -713,10 +1102,9 @@ export class Particle {
     draw() {
         ctx.save();
         ctx.globalAlpha = this.alpha;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
         ctx.fillStyle = this.color;
-        ctx.fill();
+        const pixelSize = Math.max(2, Math.floor(this.radius * 2));
+        ctx.fillRect(this.x - pixelSize/2, this.y - pixelSize/2, pixelSize, pixelSize);
         ctx.restore();
     }
 
@@ -736,11 +1124,13 @@ export class Sawblade {
         this.angle = angleOffset;
         this.orbitRadius = radius;
         this.radius = 20; // Size of the saw
-        this.speed = 0.02; // Rotation speed
+        this.speed = 0.04; // Rotation speed (Increased)
+        this.spinAngle = 0; // Góc xoay riêng của lưỡi cưa
     }
 
     update() {
         this.angle += this.speed;
+        this.spinAngle += 0.05; // Tốc độ xoay của lưỡi cưa
         this.x = this.player.x + Math.cos(this.angle) * this.orbitRadius;
         this.y = this.player.y + Math.sin(this.angle) * this.orbitRadius;
         this.draw();
@@ -749,30 +1139,38 @@ export class Sawblade {
     draw() {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle * 5); // Spin the blade itself faster
+        const rotation = Math.floor(this.spinAngle * 2) % 8; // Discrete rotation sử dụng spinAngle
         
-        // Draw Sawblade (Pixel art style procedural)
+        // Draw Sawblade - Pixel gear
+        const pixelSize = 4;
         ctx.fillStyle = '#C0C0C0'; // Silver
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-        ctx.fill();
+        
+        // Main disc (octagonal)
+        ctx.fillRect(-this.radius, -pixelSize, this.radius * 2, pixelSize * 2); // Horizontal
+        ctx.fillRect(-pixelSize, -this.radius, pixelSize * 2, this.radius * 2); // Vertical
+        ctx.fillRect(-this.radius * 0.7, -this.radius * 0.7, this.radius * 1.4, pixelSize); // Diagonal 1
+        ctx.fillRect(-this.radius * 0.7, this.radius * 0.7 - pixelSize, this.radius * 1.4, pixelSize); // Diagonal 2
         
         // Center hole
         ctx.fillStyle = '#333';
-        ctx.beginPath();
-        ctx.arc(0, 0, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-5, -5, 10, 10);
 
-        // Teeth
+        // Teeth - Pixel spikes
         ctx.fillStyle = '#808080';
-        for(let i=0; i<8; i++) {
-            ctx.rotate(Math.PI / 4);
-            ctx.beginPath();
-            ctx.moveTo(this.radius, 0);
-            ctx.lineTo(this.radius + 8, 4);
-            ctx.lineTo(this.radius, 8);
-            ctx.fill();
-        }
+        const teeth = [
+            {x: this.radius, y: -2}, {x: -this.radius - 4, y: -2}, // Horizontal
+            {x: -2, y: this.radius}, {x: -2, y: -this.radius - 4}, // Vertical
+            {x: this.radius * 0.7, y: this.radius * 0.7}, // Diagonals
+            {x: -this.radius * 0.7 - 4, y: -this.radius * 0.7 - 4},
+            {x: this.radius * 0.7, y: -this.radius * 0.7 - 4},
+            {x: -this.radius * 0.7 - 4, y: this.radius * 0.7}
+        ];
+        
+        teeth.forEach((tooth, i) => {
+            if ((i + rotation) % 2 === 0) {
+                ctx.fillRect(tooth.x, tooth.y, 4, 4);
+            }
+        });
         
         ctx.restore();
     }
@@ -784,7 +1182,7 @@ export class Spear {
         this.angle = angleOffset;
         this.orbitRadius = 80; // Distance from player
         this.length = 60;
-        this.speed = 0.02; // Rotation speed
+        this.speed = 0.03; // Rotation speed (Increased)
         this.active = true;
     }
 
@@ -899,20 +1297,36 @@ export class Pet {
         ctx.save();
         ctx.translate(this.x, this.y);
         const scale = 2;
+        const bob = Math.floor(Math.sin(performance.now() / 200) * 2); // Pixel bobbing
 
         // Pixel Pet (Floating Robot)
         // Body
         ctx.fillStyle = '#00BCD4'; // Cyan
-        ctx.fillRect(-3 * scale, -3 * scale, 6 * scale, 6 * scale);
+        ctx.fillRect(-3 * scale, -3 * scale + bob, 6 * scale, 6 * scale);
+        // Side panels
+        ctx.fillStyle = '#0097A7';
+        ctx.fillRect(-4 * scale, -2 * scale + bob, 1 * scale, 4 * scale);
+        ctx.fillRect(3 * scale, -2 * scale + bob, 1 * scale, 4 * scale);
+        
         // Eye
-        ctx.fillStyle = 'white';
-        ctx.fillRect(-1 * scale, -1 * scale, 2 * scale, 2 * scale);
+        ctx.fillStyle = '#212121';
+        ctx.fillRect(-1 * scale, -1 * scale + bob, 3 * scale, 3 * scale);
+        ctx.fillStyle = '#00E5FF';
+        ctx.fillRect(0, 0 + bob, 1 * scale, 1 * scale); // Glowing pixel
+        
         // Antenna
         ctx.fillStyle = '#B0BEC5';
-        ctx.fillRect(-0.5 * scale, -5 * scale, 1 * scale, 2 * scale);
-        // Thruster
+        ctx.fillRect(-0.5 * scale, -6 * scale + bob, 1 * scale, 3 * scale);
+        ctx.fillStyle = '#F44336'; // Red tip
+        ctx.fillRect(-1 * scale, -7 * scale + bob, 2 * scale, 1 * scale);
+        
+        // Thruster - Animated
         ctx.fillStyle = '#FF5722';
-        ctx.fillRect(-2 * scale, 3 * scale, 4 * scale, 1 * scale);
+        ctx.fillRect(-2 * scale, 3 * scale + bob, 4 * scale, 1 * scale);
+        if (Math.floor(Date.now() / 100) % 2 === 0) {
+            ctx.fillStyle = '#FFEB3B';
+            ctx.fillRect(-1.5 * scale, 4 * scale + bob, 3 * scale, 2 * scale);
+        }
 
         ctx.restore();
     }
@@ -942,31 +1356,98 @@ export class Bomb {
         ctx.translate(this.x, this.y);
         const scale = 2;
 
-        // Pixel Bomb
-        // Body
+        // Pixel Bomb - Classic round bomb
+        // Body (Octagonal pixel circle)
         ctx.fillStyle = '#212121'; // Black
-        ctx.beginPath();
-        ctx.arc(0, 0, 5 * scale, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-5 * scale, -3 * scale, 10 * scale, 6 * scale); // Horizontal
+        ctx.fillRect(-3 * scale, -5 * scale, 6 * scale, 10 * scale); // Vertical
+        ctx.fillRect(-4 * scale, -4 * scale, 8 * scale, 8 * scale); // Center square
+        
+        // Shine
+        ctx.fillStyle = '#424242';
+        ctx.fillRect(-2 * scale, -3 * scale, 3 * scale, 3 * scale);
         
         // Fuse
         ctx.fillStyle = '#F57F17'; // Orange
-        ctx.fillRect(-1 * scale, -7 * scale, 2 * scale, 3 * scale);
+        ctx.fillRect(-1 * scale, -7 * scale, 2 * scale, 4 * scale);
         
         // Spark (Blinking)
         if (Math.floor(Date.now() / 100) % 2 === 0) {
             ctx.fillStyle = '#FFEB3B'; // Yellow
-            ctx.fillRect(-1 * scale, -9 * scale, 2 * scale, 2 * scale);
+            ctx.fillRect(-2 * scale, -10 * scale, 4 * scale, 3 * scale);
+            ctx.fillRect(-1 * scale, -11 * scale, 2 * scale, 2 * scale);
         }
 
         // Pulse effect before explosion
         if (this.timer < 20 && Math.floor(Date.now() / 50) % 2 === 0) {
              ctx.fillStyle = 'red';
              ctx.globalAlpha = 0.5;
-             ctx.beginPath();
-             ctx.arc(0, 0, 6 * scale, 0, Math.PI * 2);
-             ctx.fill();
+             ctx.fillRect(-8 * scale, -8 * scale, 16 * scale, 16 * scale);
         }
+
+        ctx.restore();
+    }
+}
+
+export class StunBomb {
+    constructor(x, y, targetX, targetY, level) {
+        this.x = x;
+        this.y = y;
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.radius = 8;
+        this.speed = 8;
+        this.exploded = false;
+        this.level = level;
+        // Range: 160px base + 10px per level
+        this.range = 160 + (level * 10);
+        this.stunDuration = 120; // 2 seconds (60fps)
+        
+        const angle = Math.atan2(targetY - y, targetX - x);
+        this.velocity = {
+            x: Math.cos(angle) * this.speed,
+            y: Math.sin(angle) * this.speed
+        };
+    }
+
+    update() {
+        // Move towards target
+        const dist = Math.hypot(this.targetX - this.x, this.targetY - this.y);
+        
+        if (dist < this.speed) {
+            this.exploded = true;
+        } else {
+            this.x += this.velocity.x;
+            this.y += this.velocity.y;
+        }
+        
+        this.draw();
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        // Rotate (spin)
+        ctx.rotate(performance.now() / 100);
+        
+        const scale = 1.5;
+        
+        // Bomb Body
+        ctx.fillStyle = '#29B6F6'; // Light Blue
+        ctx.beginPath();
+        ctx.arc(0, 0, 6 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Electric details
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-4 * scale, 0);
+        ctx.lineTo(4 * scale, 0);
+        ctx.moveTo(0, -4 * scale);
+        ctx.lineTo(0, 4 * scale);
+        ctx.stroke();
 
         ctx.restore();
     }
@@ -1128,23 +1609,26 @@ export class Drone {
         this.x = player.x;
         this.y = player.y;
         this.level = 1;
-        this.baseDamage = 1.5;
-        this.damagePerLevel = 0.3;
+        this.baseDamage = 2; // Damage gốc = 2 ATK
+        this.damagePerLevel = 1; // Mỗi level +1 ATK
         this.baseCooldown = 8000; // 8 seconds
         this.cooldownReductionPerLevel = 1000; // 1 second
-        this.duration = 2000; // 2 seconds active
-        
+        this.duration = 2000; // ActiActi
         this.state = 'COOLDOWN'; 
         this.timer = performance.now(); 
         this.lastFired = 0;
-        this.fireRate = 100; // Shoot every 100ms when active
+        this.fireRate = 200; // Bắn mỗi 0.2s (200ms)
         
         this.orbitAngle = 0;
         this.orbitRadius = 50;
     }
 
     get damage() {
-        return this.baseDamage + (this.level - 1) * this.damagePerLevel;
+        if (this.level === 1) return 2;
+        if (this.level === 2) return 4;
+        if (this.level === 3) return 5;
+        if (this.level >= 4) return 10;
+        return 2;
     }
 
     get cooldown() {
@@ -1210,8 +1694,8 @@ export class Drone {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        // Bobbing effect
-        const bob = Math.sin(performance.now() / 200) * 5;
+        // Discrete bobbing effect (pixel perfect)
+        const bob = Math.floor(Math.sin(performance.now() / 200) * 3) * 2;
         ctx.translate(0, bob);
 
         const scale = 1.5;
@@ -1220,30 +1704,44 @@ export class Drone {
         ctx.fillStyle = this.state === 'ACTIVE' ? '#00E5FF' : '#607D8B'; // Bright Cyan if active, Grey if cooldown
         
         // Quadcopter shape
-        ctx.fillRect(-6 * scale, -2 * scale, 12 * scale, 4 * scale); // Main body
-        ctx.fillRect(-2 * scale, -6 * scale, 4 * scale, 12 * scale); // Cross
+        ctx.fillRect(-6 * scale, -2 * scale, 12 * scale, 4 * scale); // Main body horizontal
+        ctx.fillRect(-2 * scale, -6 * scale, 4 * scale, 12 * scale); // Main body vertical
+        ctx.fillRect(-3 * scale, -3 * scale, 6 * scale, 6 * scale); // Center hub
+        
+        // Body details
+        ctx.fillStyle = this.state === 'ACTIVE' ? '#0097A7' : '#455A64';
+        ctx.fillRect(-1 * scale, -4 * scale, 2 * scale, 8 * scale);
+        ctx.fillRect(-4 * scale, -1 * scale, 8 * scale, 2 * scale);
         
         // Rotors
         ctx.fillStyle = '#212121';
         if (this.state === 'ACTIVE') {
-            // Spin blur
-            ctx.globalAlpha = 0.5;
-            ctx.beginPath(); ctx.arc(-6 * scale, -6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(6 * scale, -6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(-6 * scale, 6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(6 * scale, 6 * scale, 4 * scale, 0, Math.PI*2); ctx.fill();
+            // Spin blur - pixel style (overlapping squares)
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(-10 * scale, -10 * scale, 8 * scale, 8 * scale);
+            ctx.fillRect(2 * scale, -10 * scale, 8 * scale, 8 * scale);
+            ctx.fillRect(-10 * scale, 2 * scale, 8 * scale, 8 * scale);
+            ctx.fillRect(2 * scale, 2 * scale, 8 * scale, 8 * scale);
             ctx.globalAlpha = 1.0;
         } else {
-            // Static rotors
-            ctx.fillRect(-8 * scale, -7 * scale, 4 * scale, 2 * scale);
-            ctx.fillRect(4 * scale, -7 * scale, 4 * scale, 2 * scale);
-            ctx.fillRect(-8 * scale, 5 * scale, 4 * scale, 2 * scale);
-            ctx.fillRect(4 * scale, 5 * scale, 4 * scale, 2 * scale);
+            // Static rotors - propeller blades
+            ctx.fillRect(-10 * scale, -7 * scale, 8 * scale, 2 * scale);
+            ctx.fillRect(-7 * scale, -8 * scale, 2 * scale, 4 * scale);
+            
+            ctx.fillRect(2 * scale, -7 * scale, 8 * scale, 2 * scale);
+            ctx.fillRect(7 * scale, -8 * scale, 2 * scale, 4 * scale);
+            
+            ctx.fillRect(-10 * scale, 5 * scale, 8 * scale, 2 * scale);
+            ctx.fillRect(-7 * scale, 4 * scale, 2 * scale, 4 * scale);
+            
+            ctx.fillRect(2 * scale, 5 * scale, 8 * scale, 2 * scale);
+            ctx.fillRect(7 * scale, 4 * scale, 2 * scale, 4 * scale);
         }
 
-        // LED Status
-        ctx.fillStyle = this.state === 'ACTIVE' ? '#00FF00' : '#F44336';
-        ctx.fillRect(-1 * scale, -1 * scale, 2 * scale, 2 * scale);
+        // LED Status (Blinking when active)
+        const blink = this.state === 'ACTIVE' && Math.floor(Date.now() / 200) % 2 === 0;
+        ctx.fillStyle = this.state === 'ACTIVE' ? (blink ? '#76FF03' : '#00FF00') : '#F44336';
+        ctx.fillRect(-1.5 * scale, -1.5 * scale, 3 * scale, 3 * scale);
 
         ctx.restore();
     }

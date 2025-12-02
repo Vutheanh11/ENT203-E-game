@@ -14,5 +14,6 @@ const world = {
 };
 
 const buildings = [];
+const vehicles = []; // Abandoned helicopters and planes
 
-export { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings };
+export { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings, vehicles };
