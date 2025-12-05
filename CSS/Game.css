@@ -199,9 +199,45 @@ canvas {
 }
 
 .math-question {
-    font-size: 1.2em;
+    font-size: 0.9em;
     margin-bottom: 20px;
     color: #fff;
+    line-height: 1.5;
+    text-align: left;
+    padding: 0 10px;
+}
+
+.quiz-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+    width: 100%;
+}
+
+.quiz-option-btn {
+    background-color: #333;
+    border: 3px solid #666;
+    color: #fff;
+    padding: 12px;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 0.6em;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+}
+
+.quiz-option-btn:hover {
+    background-color: #444;
+    border-color: #00c6ff;
+    transform: translateX(5px);
+}
+
+.quiz-option-btn.selected {
+    background-color: #00c6ff;
+    border-color: #fff;
+    color: #000;
+    font-weight: bold;
 }
 
 .math-input {

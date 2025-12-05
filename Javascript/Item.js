@@ -447,16 +447,6 @@ const allUpgrades = [
     { type: 'stunBomb', title: 'Stun Bomb', desc: 'Stuns enemies in 160px range (8s CD)' }
 ];
 
-function applyUpgrade(type, player, updateStatsCallback) {
-    let value = 0;
-    if (type === 'speed') {
-        player.speed *= 1.2;
-    } else if (type === 'fireRate') {
-        value = 0.9;
-    }
-    updateStatsCallback(type, value);
-}
-
 export function showUpgradeOptions(player, resumeCallback, updateStatsCallback, currentLevels, maxLevel) {
     const modal = document.getElementById('level-up-modal');
     const optionsContainer = document.getElementById('upgrade-options');
@@ -513,4 +503,87 @@ export function showUpgradeOptions(player, resumeCallback, updateStatsCallback, 
         };
         optionsContainer.appendChild(card);
     });
+}
+
+export function showCheatMenu(player, updateStatsCallback, currentLevels, maxLevel) {
+    const modal = document.getElementById('cheat-modal');
+    const optionsContainer = document.getElementById('cheat-options');
+    optionsContainer.innerHTML = '';
+    modal.classList.remove('hidden');
+
+    allUpgrades.forEach(upgrade => {
+        const card = document.createElement('div');
+        card.className = 'upgrade-card';
+        
+        // Show level if applicable
+        let levelText = "";
+        if (currentLevels[upgrade.type] !== undefined) {
+            levelText = ` (Lvl ${currentLevels[upgrade.type]})`;
+        }
+
+        // Create Canvas for Icon
+        const iconCanvas = document.createElement('canvas');
+        iconCanvas.width = 50;
+        iconCanvas.height = 50;
+        iconCanvas.className = 'upgrade-icon';
+        const iconCtx = iconCanvas.getContext('2d');
+        drawIcon(iconCtx, upgrade.type, 50, 50);
+
+        const textDiv = document.createElement('div');
+        textDiv.innerHTML = `<h3>${upgrade.title}${levelText}</h3><p>${upgrade.desc}</p>`;
+
+        card.appendChild(iconCanvas);
+        card.appendChild(textDiv);
+
+        card.onclick = () => {
+            applyUpgrade(upgrade.type, player, updateStatsCallback);
+            // Update level text immediately
+            if (currentLevels[upgrade.type] !== undefined) {
+                textDiv.querySelector('h3').innerHTML = `${upgrade.title} (Lvl ${currentLevels[upgrade.type]})`;
+            }
+        };
+        optionsContainer.appendChild(card);
+    });
+}
+
+function applyUpgrade(type, player, updateStatsCallback) {
+    switch(type) {
+        case 'damage':
+            updateStatsCallback('damage', 1);
+            break;
+        case 'speed':
+            player.speed *= 1.2;
+            console.log("Speed Upgraded:", player.speed);
+            break;
+        case 'fireRate':
+            updateStatsCallback('fireRate', 0.9); // Multiplier
+            break;
+        case 'multishot':
+            updateStatsCallback('multishot', 1);
+            break;
+        case 'sawblade':
+            updateStatsCallback('sawblade', 1);
+            break;
+        case 'spear':
+            updateStatsCallback('spear', 1);
+            break;
+        case 'pet':
+            updateStatsCallback('pet', 1);
+            break;
+        case 'shield':
+            updateStatsCallback('shield', 1);
+            break;
+        case 'fireRain':
+            updateStatsCallback('fireRain', 1);
+            break;
+        case 'crit':
+            updateStatsCallback('crit', 1);
+            break;
+        case 'drone':
+            updateStatsCallback('drone', 1);
+            break;
+        case 'stunBomb':
+            updateStatsCallback('stunBomb', 1);
+            break;
+    }
 }
