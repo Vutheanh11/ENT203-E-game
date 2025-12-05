@@ -447,6 +447,16 @@ const allUpgrades = [
     { type: 'stunBomb', title: 'Stun Bomb', desc: 'Stuns enemies in 160px range (8s CD)' }
 ];
 
+function applyUpgrade(type, player, updateStatsCallback) {
+    let value = 0;
+    if (type === 'speed') {
+        player.speed *= 1.2;
+    } else if (type === 'fireRate') {
+        value = 0.9;
+    }
+    updateStatsCallback(type, value);
+}
+
 export function showUpgradeOptions(player, resumeCallback, updateStatsCallback, currentLevels, maxLevel) {
     const modal = document.getElementById('level-up-modal');
     const optionsContainer = document.getElementById('upgrade-options');
