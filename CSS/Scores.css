@@ -1,0 +1,99 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #1a1a1a;
+    font-family: 'Press Start 2P', cursive;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    width: 90%;
+    max-width: 800px;
+    margin-top: 50px;
+    text-align: center;
+}
+
+h1 {
+    color: #ffd700;
+    text-shadow: 4px 4px 0 #000;
+    margin-bottom: 40px;
+    font-size: 2em;
+}
+
+.scores-table-container {
+    background-color: #2a2a2a;
+    border: 4px solid #fff;
+    box-shadow: 8px 8px 0 rgba(0,0,0,0.5);
+    padding: 20px;
+    margin-bottom: 30px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+th, td {
+    padding: 15px;
+    text-align: left;
+    border-bottom: 2px solid #444;
+}
+
+th {
+    color: #4CAF50;
+    font-size: 0.8em;
+    text-transform: uppercase;
+}
+
+td {
+    font-size: 0.7em;
+    color: #ccc;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover td {
+    background-color: #333;
+    color: #fff;
+}
+
+.rank-1 { color: #ffd700; } /* Gold */
+.rank-2 { color: #c0c0c0; } /* Silver */
+.rank-3 { color: #cd7f32; } /* Bronze */
+
+.back-btn {
+    background-color: #ff4444;
+    border: 4px solid #fff;
+    color: #fff;
+    padding: 15px 30px;
+    font-family: 'Press Start 2P', cursive;
+    font-size: 1em;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    box-shadow: 4px 4px 0 #000;
+    transition: transform 0.1s;
+}
+
+.back-btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 #000;
+    background-color: #ff6666;
+}
+
+.back-btn:active {
+    transform: translate(0, 0);
+    box-shadow: 2px 2px 0 #000;
+}
+
+.loading {
+    padding: 20px;
+    color: #888;
+}

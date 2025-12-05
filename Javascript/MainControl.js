@@ -1,6 +1,6 @@
 import { canvas, ctx, scoreEl, levelEl, expBarEl, world, buildings, vehicles } from './Globals.js';
 import { Player, Projectile, Enemy, Particle, Sawblade, Spear, Pet, Bomb, StunBomb, DamageNumber, FirePatch, Chest, Building, ShotEffect, HitEffect, Drone } from './Entities.js';
-import { ExpGem, showUpgradeOptions, showCheatMenu, Magnet, Meat, drawIcon, NightVision } from './Item.js';
+import { ExpGem, showUpgradeOptions, Magnet, Meat, drawIcon, NightVision } from './Item.js';
 import { startMathQuiz } from './Quiz.js';
 
 const x = canvas.width / 2;
@@ -488,10 +488,22 @@ function generateRuinedStreetBackground() {
     }
 }
 
+let gameScale = 1;
+
+function updateDimensions() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    // Responsive Scaling Logic
+    // Ensure mobile view isn't too zoomed in (small field of view)
+    // Clamp scale between 0.6 (mobile) and 1.0 (desktop)
+    gameScale = Math.min(1, Math.max(0.6, window.innerWidth / 1000));
+    
+    generateRuinedStreetBackground();
+}
+
 // Call immediately to ensure background exists before animation starts
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-generateRuinedStreetBackground();
+updateDimensions();
 
 // Spear Logic
 // Removed cooldown logic as spears are now permanent orbiting objects
@@ -578,7 +590,7 @@ function spawnEnemies() {
         // or just spawn at edges of world?
         // Let's spawn around the player but outside view
         
-        const spawnRadius = Math.max(canvas.width, canvas.height) / 2 + 100;
+        const spawnRadius = Math.max(canvas.width / gameScale, canvas.height / gameScale) / 2 + 100;
         const angle = Math.random() * Math.PI * 2;
         
         x = player.x + Math.cos(angle) * spawnRadius;
@@ -663,11 +675,11 @@ function spawnBoss() {
     const color = '#FF0000';
     const velocity = { x: 0, y: 0.5 }; // Slow move
     
-    // Boss HP Logic: Base 1000, +30% of base per spawn
-    // Spawn 1: 1000
-    // Spawn 2: 1300
-    // Spawn 3: 1600
-    const baseHp = 1000;
+    // Boss HP Logic: Base 5000 (x5), +30% of base per spawn
+    // Spawn 1: 5000
+    // Spawn 2: 6500
+    // Spawn 3: 8000
+    const baseHp = 5000;
     const health = baseHp + (baseHp * 0.3 * (bossSpawnCount - 1));
     
     let bossType = 'boss'; // Default (Skull)
@@ -709,7 +721,7 @@ function levelUp() {
         spawnBoss();
     }
 
-    // Pause game and start math quiz
+    // Pause game and start English quiz
     isPaused = true;
     cancelAnimationFrame(animationId);
     
@@ -721,7 +733,9 @@ function levelUp() {
         // Failure Callback
         () => {
             resumeGame();
-        }
+        },
+        // Player Reference for HP deduction
+        player
     );
 }
 
@@ -804,18 +818,22 @@ function animate(timestamp) {
     animationId = requestAnimationFrame(animate);
     
     // Camera Logic
-    // Center camera on player
-    let cameraX = player.x - canvas.width / 2;
-    let cameraY = player.y - canvas.height / 2;
+    // Center camera on player, accounting for scale
+    const visibleWidth = canvas.width / gameScale;
+    const visibleHeight = canvas.height / gameScale;
+
+    let cameraX = player.x - visibleWidth / 2;
+    let cameraY = player.y - visibleHeight / 2;
 
     // Clamp camera to world bounds
-    cameraX = Math.max(0, Math.min(cameraX, world.width - canvas.width));
-    cameraY = Math.max(0, Math.min(cameraY, world.height - canvas.height));
+    cameraX = Math.max(0, Math.min(cameraX, world.width - visibleWidth));
+    cameraY = Math.max(0, Math.min(cameraY, world.height - visibleHeight));
 
     // Clear screen (not strictly necessary if we draw full bg, but good practice)
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
+    ctx.scale(gameScale, gameScale);
     ctx.translate(-cameraX, -cameraY);
 
     // Draw Background
@@ -1213,8 +1231,8 @@ function animate(timestamp) {
                 
                 if (player.health <= 0) {
                     cancelAnimationFrame(animationId);
-                    alert('Game Over! Score: ' + score);
-                    init();
+                    saveScore(player.username, score, level);
+                    showGameOverModal();
                 }
             }
         }
@@ -1571,9 +1589,7 @@ function updatePlayerVelocity() {
 }
 
 window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    generateRuinedStreetBackground(); // Regenerate BG on resize
+    updateDimensions();
     init(); 
 });
 
@@ -1686,8 +1702,8 @@ const guideContent = {
         </div>
         <div class="guide-item">
             <div class="guide-info">
-                <h3>Math Quiz</h3>
-                <p>Every level up triggers a math quiz. Solve it to get your upgrade!</p>
+                <h3>📚 English Quiz</h3>
+                <p>Every level up triggers an English quiz (1 minute). Answer correctly to get your upgrade! Wrong answer = -20 HP!</p>
             </div>
         </div>
         <div class="guide-item">
@@ -1769,46 +1785,61 @@ mobileToggleBtn.addEventListener('click', () => {
 });
 
 // Touch Events for Joystick
-joystickContainer.addEventListener('touchstart', (e) => {
+joystickBase.addEventListener('touchstart', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     joystickActive = true;
     handleJoystickMove(e.touches[0]);
 }, { passive: false });
 
-joystickContainer.addEventListener('touchmove', (e) => {
-    e.preventDefault();
+document.addEventListener('touchmove', (e) => {
     if (joystickActive) {
+        e.preventDefault();
         handleJoystickMove(e.touches[0]);
     }
 }, { passive: false });
 
-joystickContainer.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    resetJoystick();
-});
+document.addEventListener('touchend', (e) => {
+    if (joystickActive) {
+        e.preventDefault();
+        resetJoystick();
+    }
+}, { passive: false });
+
+document.addEventListener('touchcancel', (e) => {
+    if (joystickActive) {
+        e.preventDefault();
+        resetJoystick();
+    }
+}, { passive: false });
 
 // Mouse Events for Joystick (for PC testing)
-joystickContainer.addEventListener('mousedown', (e) => {
+joystickBase.addEventListener('mousedown', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     joystickActive = true;
     handleJoystickMove(e);
     
     // Bind window events to handle dragging outside
-    window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mouseup', handleWindowMouseUp);
+    document.addEventListener('mousemove', handleWindowMouseMove);
+    document.addEventListener('mouseup', handleWindowMouseUp);
 });
 
 function handleWindowMouseMove(e) {
     if (joystickActive) {
+        e.preventDefault();
         handleJoystickMove(e);
     }
 }
 
 function handleWindowMouseUp(e) {
-    joystickActive = false;
-    resetJoystick();
-    window.removeEventListener('mousemove', handleWindowMouseMove);
-    window.removeEventListener('mouseup', handleWindowMouseUp);
+    if (joystickActive) {
+        e.preventDefault();
+        joystickActive = false;
+        resetJoystick();
+        document.removeEventListener('mousemove', handleWindowMouseMove);
+        document.removeEventListener('mouseup', handleWindowMouseUp);
+    }
 }
 
 function resetJoystick() {
@@ -1844,26 +1875,6 @@ function handleJoystickMove(input) {
     updatePlayerVelocity();
 }
 
-// Cheat Logic
-const cheatBtn = document.getElementById('cheat-btn');
-const cheatModal = document.getElementById('cheat-modal');
-const closeCheatBtn = document.getElementById('close-cheat');
-
-function openCheatMenu() {
-    isPaused = true;
-    cancelAnimationFrame(animationId);
-    showCheatMenu(player, updateStats, upgradeLevels, MAX_LEVEL);
-}
-
-function closeCheatMenu() {
-    cheatModal.classList.add('hidden');
-    isPaused = false;
-    animate(performance.now());
-}
-
-cheatBtn.addEventListener('click', openCheatMenu);
-closeCheatBtn.addEventListener('click', closeCheatMenu);
-
 // Login Logic
 const loginScreen = document.getElementById('login-screen');
 const loginBtn = document.getElementById('login-btn');
@@ -1873,7 +1884,6 @@ const uiContainer = document.querySelector('.ui-container');
 // Initially hide UI and pause game logic (don't start loop yet)
 uiContainer.classList.add('hidden');
 guideBtn.classList.add('hidden');
-cheatBtn.classList.add('hidden');
 mobileToggleBtn.classList.add('hidden');
 
 loginBtn.addEventListener('click', () => {
@@ -1884,7 +1894,6 @@ loginBtn.addEventListener('click', () => {
     loginScreen.classList.add('hidden');
     uiContainer.classList.remove('hidden');
     guideBtn.classList.remove('hidden');
-    cheatBtn.classList.remove('hidden');
     mobileToggleBtn.classList.remove('hidden');
     
     // Start Game
@@ -1898,12 +1907,63 @@ usernameInput.addEventListener('keypress', (e) => {
         loginBtn.click();
     }
 });
-document.getElementById('password').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        loginBtn.click();
-    }
-});
 
 // Don't start automatically anymore
 // spawnEnemies();
 // animate();
+
+function saveScore(username, score, level) {
+    // This function saves score to backend API at /api/saveScore
+    // Backend expects form data (application/x-www-form-urlencoded)
+    
+    console.log("Attempting to save score...", { username, score, level });
+
+    const formData = new URLSearchParams();
+    formData.append('username', username);
+    formData.append('score', score);
+    formData.append('level', level);
+
+    fetch('/api/saveScore', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString()
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.text();
+    })
+    .then(data => {
+        console.log('Score saved successfully:', data);
+    })
+    .catch((error) => {
+        console.warn('Could not save score (Backend API missing?):', error);
+    });
+}
+
+function showGameOverModal() {
+    const modal = document.getElementById('gameover-modal');
+    const finalScoreEl = document.getElementById('final-score');
+    const finalLevelEl = document.getElementById('final-level');
+    const finalUsernameEl = document.getElementById('final-username');
+    const restartBtn = document.getElementById('restart-btn');
+
+    // Update stats
+    finalScoreEl.textContent = score.toLocaleString();
+    finalLevelEl.textContent = level;
+    finalUsernameEl.textContent = player.username;
+
+    // Show modal
+    modal.classList.remove('hidden');
+    isPaused = true;
+
+    // Restart button handler
+    restartBtn.onclick = () => {
+        modal.classList.add('hidden');
+        init();
+        isPaused = false;
+    };
+}
